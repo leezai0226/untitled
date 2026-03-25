@@ -1,0 +1,421 @@
+"use client";
+
+/*
+ * ──────────────────────────────────────────────────────────
+ * 관리자 전용 — Shop 디지털 에셋 등록 폼  (/admin/shop/new)
+ *
+ * [Supabase Storage 버킷 사전 생성 필요]
+ * 아래 3개 버킷을 Supabase 대시보드 > Storage 에서 직접 생성해야 합니다:
+ *   1. shop-thumbnails  (Public)  — 상품 썸네일 이미지
+ *   2. shop-details     (Public)  — 상세페이지 이미지 (다중)
+ *   3. shop-files       (Private) — 판매용 디지털 파일 (zip, pdf 등)
+ *
+ * [보안 참고]
+ * 현재는 테스트를 위해 접속 제한이 없습니다.
+ * 향후 /admin 경로는 관리자 권한(user_metadata.role === 'admin')
+ * 확인 후 접근을 허용하도록 수정할 예정입니다.
+ * ──────────────────────────────────────────────────────────
+ */
+
+import { useState, useRef } from "react";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/utils/supabase/client";
+import { sanitize } from "@/utils/sanitize";
+
+const CATEGORY_OPTIONS = [
+  { value: "컬러 프리셋", label: "🎨 컬러 프리셋" },
+  { value: "자막 템플릿", label: "✏️ 자막 템플릿" },
+  { value: "효과음/BGM", label: "🎵 효과음/BGM" },
+  { value: "Free", label: "🆓 Free" },
+] as const;
+
+export default function AdminShopNewPage() {
+  const router = useRouter();
+  const supabase = createClient();
+
+  /* ── 폼 상태 ── */
+  const [title, setTitle] = useState("");
+  const [category, setCategory] = useState("");
+  const [price, setPrice] = useState<number | "">("");
+  const [description, setDescription] = useState("");
+  const [unlimited, setUnlimited] = useState(true);
+  const [remainingSeats, setRemainingSeats] = useState<number | "">("");
+
+  /* ── 파일 상태 ── */
+  const [thumbnailFile, setThumbnailFile] = useState<File | null>(null);
+  const [thumbnailPreview, setThumbnailPreview] = useState<string | null>(null);
+
+  const [detailFiles, setDetailFiles] = useState<File[]>([]);
+  const [detailPreviews, setDetailPreviews] = useState<string[]>([]);
+
+  const [productFile, setProductFile] = useState<File | null>(null);
+
+  const [submitting, setSubmitting] = useState(false);
+
+  const thumbnailRef = useRef<HTMLInputElement>(null);
+  const detailRef = useRef<HTMLInputElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  /* ── 썸네일 선택 ── */
+  const handleThumbnailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setThumbnailFile(file);
+    setThumbnailPreview(URL.createObjectURL(file));
+  };
+
+  /* ── 상세 이미지 다중 선택 ── */
+  const handleDetailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
+    setDetailFiles((prev) => [...prev, ...files]);
+    setDetailPreviews((prev) => [
+      ...prev,
+      ...files.map((f) => URL.createObjectURL(f)),
+    ]);
+  };
+
+  const removeDetailImage = (index: number) => {
+    setDetailFiles((prev) => prev.filter((_, i) => i !== index));
+    setDetailPreviews((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  /* ── 유효성 ── */
+  const isValid =
+    title.trim() !== "" &&
+    category !== "" &&
+    price !== "" &&
+    Number(price) >= 0 &&
+    description.trim() !== "" &&
+    thumbnailFile !== null &&
+    productFile !== null;
+
+  /* ── 안전한 파일명 생성 (한글·공백 제거, 영문+숫자+확장자만) ── */
+  const safeFileName = (originalName: string) => {
+    const ext = originalName.split(".").pop()?.toLowerCase() ?? "bin";
+    const random = Math.random().toString(36).substring(2, 10);
+    return `${Date.now()}-${random}.${ext}`;
+  };
+
+  /* ── 업로드 헬퍼 ── */
+  const uploadFile = async (bucket: string, file: File, path: string) => {
+    const { error } = await supabase.storage.from(bucket).upload(path, file, {
+      cacheControl: "3600",
+      upsert: false,
+    });
+    if (error) throw new Error(`${bucket} 업로드 실패: ${error.message}`);
+
+    const {
+      data: { publicUrl },
+    } = supabase.storage.from(bucket).getPublicUrl(path);
+    return publicUrl;
+  };
+
+  /* ── 제출 ── */
+  const handleSubmit = async () => {
+    if (!isValid || !thumbnailFile || !productFile) return;
+    setSubmitting(true);
+
+    try {
+      const folder = `product-${Date.now()}`;
+
+      // 1) 썸네일 업로드
+      const thumbnailPath = `${folder}/${safeFileName(thumbnailFile.name)}`;
+      const thumbnailUrl = await uploadFile(
+        "shop-thumbnails",
+        thumbnailFile,
+        thumbnailPath,
+      );
+
+      // 2) 상세 이미지 다중 업로드
+      const detailUrls: string[] = [];
+      for (let i = 0; i < detailFiles.length; i++) {
+        const f = detailFiles[i];
+        const detailPath = `${folder}/detail-${i}-${safeFileName(f.name)}`;
+        const url = await uploadFile("shop-details", f, detailPath);
+        detailUrls.push(url);
+      }
+
+      // 3) 판매 파일 업로드 (Private 버킷 → path만 저장)
+      const filePath = `${folder}/${safeFileName(productFile.name)}`;
+      const { error: fileError } = await supabase.storage
+        .from("shop-files")
+        .upload(filePath, productFile, {
+          cacheControl: "3600",
+          upsert: false,
+        });
+      if (fileError)
+        throw new Error(`파일 업로드 실패: ${fileError.message}`);
+
+      // 4) 서버 API를 통해 DB insert (관리자 이중 검증)
+      const insertRes = await fetch("/api/admin/products", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: title.trim(),
+          category,
+          price: Number(price),
+          description: description.trim(),
+          remaining_seats: unlimited ? null : Number(remainingSeats),
+          thumbnail_url: thumbnailUrl,
+          detail_images: detailUrls,
+          file_url: filePath,
+        }),
+      });
+
+      const insertData = await insertRes.json();
+      if (!insertRes.ok)
+        throw new Error(insertData.error || "상품 등록 실패");
+
+      alert("상품이 등록되었습니다!");
+      router.push("/admin/shop");
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "오류가 발생했습니다.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  /* ── UI ── */
+  return (
+    <div className="pt-20 pb-12">
+      <div className="mx-auto max-w-2xl px-6 py-12">
+        <h1 className="text-2xl font-bold text-white md:text-3xl">
+          🛍️ 디지털 에셋 <span className="text-primary">등록</span>
+        </h1>
+        <p className="mt-2 text-base text-sub-text">
+          Shop 페이지에 노출할 상품 정보를 입력하세요.
+        </p>
+
+        {/* ── 상품명 ── */}
+        <div className="mt-10">
+          <label className="block text-sm font-medium text-sub-text mb-2">
+            상품명 <span className="text-primary">*</span>
+          </label>
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="예: 시네마틱 컬러 프리셋 팩"
+            className="w-full rounded-xl border border-border bg-card px-4 py-3 text-base text-white placeholder:text-sub-text/50 focus:border-primary focus:outline-none transition-colors"
+          />
+        </div>
+
+        {/* ── 카테고리 ── */}
+        <div className="mt-6">
+          <label className="block text-sm font-medium text-sub-text mb-2">
+            카테고리 <span className="text-primary">*</span>
+          </label>
+          <select
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            className="w-full rounded-xl border border-border bg-card px-4 py-3 text-base text-white focus:border-primary focus:outline-none transition-colors appearance-none"
+          >
+            <option value="" disabled>카테고리를 선택하세요</option>
+            {CATEGORY_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* ── 가격 ── */}
+        <div className="mt-6">
+          <label className="block text-sm font-medium text-sub-text mb-2">
+            가격 (원) <span className="text-primary">*</span>
+          </label>
+          <input
+            type="number"
+            min={0}
+            value={price}
+            onChange={(e) =>
+              setPrice(e.target.value === "" ? "" : Number(e.target.value))
+            }
+            placeholder="0 (무료일 경우 0 입력)"
+            className="w-full rounded-xl border border-border bg-card px-4 py-3 text-base text-white placeholder:text-sub-text/50 focus:border-primary focus:outline-none transition-colors"
+          />
+        </div>
+
+        {/* ── 간단 설명 ── */}
+        <div className="mt-6">
+          <label className="block text-sm font-medium text-sub-text mb-2">
+            간단 설명 <span className="text-primary">*</span>
+          </label>
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            rows={3}
+            placeholder="Shop 카드에 보일 한 줄 소개를 입력하세요."
+            className="w-full resize-none rounded-xl border border-border bg-card px-4 py-3 text-base text-white placeholder:text-sub-text/50 focus:border-primary focus:outline-none transition-colors"
+          />
+        </div>
+
+        {/* ── 잔여 수량 (재고) ── */}
+        <div className="mt-6">
+          <label className="block text-sm font-medium text-sub-text mb-2">
+            잔여 수량 (재고)
+          </label>
+          <div className="flex items-center gap-3 mb-3">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={unlimited}
+                onChange={(e) => {
+                  setUnlimited(e.target.checked);
+                  if (e.target.checked) setRemainingSeats("");
+                }}
+                className="h-4 w-4 rounded border-border bg-card accent-primary"
+              />
+              <span className="text-sm text-white">수량 제한 없음 (무제한)</span>
+            </label>
+          </div>
+          {!unlimited && (
+            <input
+              type="number"
+              min={0}
+              value={remainingSeats}
+              onChange={(e) =>
+                setRemainingSeats(e.target.value === "" ? "" : Number(e.target.value))
+              }
+              placeholder="예: 20 (최대 수강 인원)"
+              className="w-full rounded-xl border border-border bg-card px-4 py-3 text-base text-white placeholder:text-sub-text/50 focus:border-primary focus:outline-none transition-colors"
+            />
+          )}
+          <p className="mt-1.5 text-xs text-sub-text/60">
+            클래스처럼 인원 제한이 있는 상품은 체크를 해제하고 수량을 입력하세요.
+          </p>
+        </div>
+
+        {/* ── 썸네일 이미지 (단일) ── */}
+        <div className="mt-6">
+          <label className="block text-sm font-medium text-sub-text mb-2">
+            썸네일 이미지 <span className="text-primary">*</span>
+          </label>
+          <input
+            ref={thumbnailRef}
+            type="file"
+            accept="image/*"
+            onChange={handleThumbnailChange}
+            className="hidden"
+          />
+          {thumbnailPreview ? (
+            <div className="relative">
+              <img
+                src={thumbnailPreview}
+                alt="썸네일 미리보기"
+                className="w-full max-h-48 object-cover rounded-xl border border-border"
+              />
+              <button
+                onClick={() => {
+                  setThumbnailFile(null);
+                  setThumbnailPreview(null);
+                }}
+                className="absolute top-2 right-2 rounded-lg bg-background/80 px-2 py-1 text-xs text-sub-text hover:text-red-400 transition-colors"
+              >
+                삭제
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => thumbnailRef.current?.click()}
+              className="w-full rounded-xl border-2 border-dashed border-border py-10 text-center text-sub-text transition-colors hover:border-primary/50 hover:text-primary"
+            >
+              클릭하여 이미지 선택
+            </button>
+          )}
+        </div>
+
+        {/* ── 상세페이지 이미지 (다중) ── */}
+        <div className="mt-6">
+          <label className="block text-sm font-medium text-sub-text mb-2">
+            상세페이지 이미지{" "}
+            <span className="text-sub-text/60">(선택, 다중 업로드 가능)</span>
+          </label>
+          <input
+            ref={detailRef}
+            type="file"
+            accept="image/*"
+            multiple
+            onChange={handleDetailChange}
+            className="hidden"
+          />
+          {detailPreviews.length > 0 && (
+            <div className="mb-3 grid grid-cols-3 gap-2">
+              {detailPreviews.map((src, i) => (
+                <div key={i} className="relative">
+                  <img
+                    src={src}
+                    alt={`상세 ${i + 1}`}
+                    className="h-24 w-full object-cover rounded-lg border border-border"
+                  />
+                  <button
+                    onClick={() => removeDetailImage(i)}
+                    className="absolute top-1 right-1 rounded bg-background/80 px-1.5 py-0.5 text-[10px] text-sub-text hover:text-red-400 transition-colors"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <button
+            onClick={() => detailRef.current?.click()}
+            className="w-full rounded-xl border-2 border-dashed border-border py-6 text-center text-sm text-sub-text transition-colors hover:border-primary/50 hover:text-primary"
+          >
+            + 상세 이미지 추가
+          </button>
+        </div>
+
+        {/* ── 판매용 디지털 파일 (단일) ── */}
+        <div className="mt-6">
+          <label className="block text-sm font-medium text-sub-text mb-2">
+            판매용 디지털 파일 <span className="text-primary">*</span>
+          </label>
+          <input
+            ref={fileRef}
+            type="file"
+            onChange={(e) => setProductFile(e.target.files?.[0] ?? null)}
+            className="hidden"
+          />
+          {productFile ? (
+            <div className="flex items-center justify-between rounded-xl border border-border bg-card px-4 py-3">
+              <span className="truncate text-sm text-white">
+                📎 {productFile.name}{" "}
+                <span className="text-sub-text">
+                  ({(productFile.size / 1024 / 1024).toFixed(1)} MB)
+                </span>
+              </span>
+              <button
+                onClick={() => setProductFile(null)}
+                className="text-xs text-sub-text hover:text-red-400 transition-colors ml-2"
+              >
+                삭제
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => fileRef.current?.click()}
+              className="w-full rounded-xl border-2 border-dashed border-border py-10 text-center text-sub-text transition-colors hover:border-primary/50 hover:text-primary"
+            >
+              클릭하여 파일 선택 (zip, pdf 등)
+            </button>
+          )}
+        </div>
+
+        {/* ── 등록 버튼 ── */}
+        <button
+          onClick={handleSubmit}
+          disabled={!isValid || submitting}
+          className={`mt-10 w-full rounded-xl py-4 text-lg font-semibold transition-all duration-200 ${
+            isValid && !submitting
+              ? "bg-primary text-background hover:brightness-110 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-primary/25 cursor-pointer"
+              : "bg-border text-sub-text cursor-not-allowed"
+          }`}
+        >
+          {submitting ? "업로드 중..." : "상품 등록"}
+        </button>
+      </div>
+    </div>
+  );
+}
