@@ -51,11 +51,11 @@ export default function Footer() {
           <div className="text-xs leading-relaxed text-gray-500 space-y-1">
             <p>
               사업자등록번호: 457-11-02461 &nbsp;&nbsp;&nbsp;
-              통신판매업신고번호 :
+              통신판매업신고번호: 2024-인천서구-2770
             </p>
             <p>
               대표: 이영재 &nbsp;&nbsp;&nbsp;
-              주소: 인천광역시 연수구 인천타워대로 301 센텀하이브 A동 3936호
+              주소: 인천광역시 서구 서곶로 12 6동 503호
             </p>
           </div>
           <div className="mt-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">

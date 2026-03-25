@@ -6,7 +6,6 @@ import { Suspense } from "react";
 import Image from "next/image";
 import { createClient } from "@/utils/supabase/client";
 import FadeInSection from "@/components/FadeInSection";
-import { loadTossPayments } from "@tosspayments/tosspayments-sdk";
 import { sanitize } from "@/utils/sanitize";
 import type { User } from "@supabase/supabase-js";
 
@@ -17,7 +16,7 @@ interface FormData {
   phone: string;
   experienceLevel: string;
   message: string;
-  paymentMethod: "toss" | "bank_transfer" | "";
+  paymentMethod: "kakaopay" | "bank_transfer" | "";
   depositorName: string;
   cashReceiptNumber: string;
 }
@@ -33,8 +32,6 @@ interface CartProduct {
     thumbnail_url: string | null;
   };
 }
-
-const TOSS_CLIENT_KEY = process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY || "";
 
 /* ─────────────── 내부 폼 컴포넌트 ─────────────── */
 
@@ -140,40 +137,15 @@ function CheckoutForm() {
   const isFormValid = fromCart
     ? form.name.trim() !== "" &&
       form.phone.trim() !== "" &&
-      (form.paymentMethod === "toss" ||
+      (form.paymentMethod === "kakaopay" ||
         (form.paymentMethod === "bank_transfer" &&
           form.depositorName.trim() !== ""))
     : form.name.trim() !== "" &&
       form.phone.trim() !== "" &&
       form.experienceLevel !== "" &&
-      (form.paymentMethod === "toss" ||
+      (form.paymentMethod === "kakaopay" ||
         (form.paymentMethod === "bank_transfer" &&
           form.depositorName.trim() !== ""));
-
-  /* ── 결제 메타데이터를 sessionStorage에 저장 ── */
-  const saveMetadata = () => {
-    const metadata: Record<string, unknown> = {
-      name: form.name.trim(),
-      phone: form.phone.trim(),
-    };
-
-    if (fromCart) {
-      metadata.cartItemIds = cartItems.map((item) => item.id);
-      metadata.cartProducts = cartItems.map((item) => ({
-        product_id: item.product.id,
-        price: item.product.price,
-      }));
-    } else {
-      metadata.className = className;
-      metadata.schedule = schedule;
-      metadata.experienceLevel = form.experienceLevel;
-      metadata.message = form.message.trim() || null;
-      if (scheduleId) metadata.scheduleId = scheduleId;
-      if (classId) metadata.classId = classId;
-    }
-
-    sessionStorage.setItem("checkout_metadata", JSON.stringify(metadata));
-  };
 
   /* ── 제출 ── */
   const handleSubmit = async () => {
@@ -181,12 +153,9 @@ function CheckoutForm() {
     setSubmitting(true);
 
     try {
-      if (form.paymentMethod === "toss") {
-        /* ── 토스페이먼츠 결제 (API 개별 연동) ── */
-        saveMetadata();
-
+      if (form.paymentMethod === "kakaopay") {
+        /* ── 카카오페이 결제 ── */
         const orderType = fromCart ? "shop" : "class";
-        const orderId = `${orderType}__${user.id.substring(0, 8)}__${Date.now()}`;
 
         const orderName = fromCart
           ? cartItems.length === 1
@@ -194,21 +163,39 @@ function CheckoutForm() {
             : `${cartItems[0].product.title} 외 ${cartItems.length - 1}건`
           : className || "원데이 클래스";
 
-        const origin = window.location.origin;
+        const metadata: Record<string, unknown> = {
+          name: form.name.trim(),
+          phone: form.phone.trim(),
+        };
 
-        const tossPayments = await loadTossPayments(TOSS_CLIENT_KEY);
-        const payment = tossPayments.payment({ customerKey: "ANONYMOUS" });
+        if (!fromCart) {
+          metadata.className = className;
+          metadata.schedule = schedule;
+          metadata.experienceLevel = form.experienceLevel;
+          metadata.message = form.message.trim() || null;
+          if (scheduleId) metadata.scheduleId = scheduleId;
+          if (classId) metadata.classId = classId;
+        }
 
-        await payment.requestPayment({
-          method: "CARD",
-          amount: { currency: "KRW", value: totalAmount },
-          orderId,
-          orderName,
-          customerName: form.name.trim(),
-          customerEmail: user.email || "",
-          successUrl: `${origin}/checkout/success`,
-          failUrl: `${origin}/checkout/fail`,
+        const res = await fetch("/api/kakaopay/ready", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ orderType, orderName, metadata }),
         });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.error || "카카오페이 결제 준비에 실패했습니다.");
+        }
+
+        // 모바일/PC 분기 리다이렉트
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        const redirectUrl = isMobile
+          ? data.redirect_mobile_url
+          : data.redirect_pc_url;
+
+        window.location.href = redirectUrl;
       } else if (form.paymentMethod === "bank_transfer") {
         /* ── 계좌 이체 (기존 로직 유지) ── */
         if (fromCart) {
@@ -273,16 +260,6 @@ function CheckoutForm() {
         }
       }
     } catch (err: unknown) {
-      // 토스 결제창에서 사용자가 취소한 경우
-      if (
-        err instanceof Error &&
-        (err.message.includes("USER_CANCEL") ||
-          err.message.includes("사용자가 결제를 취소"))
-      ) {
-        // 취소는 에러가 아니므로 조용히 처리
-        setSubmitting(false);
-        return;
-      }
       alert(err instanceof Error ? err.message : "오류가 발생했습니다.");
     } finally {
       setSubmitting(false);
@@ -497,35 +474,35 @@ function CheckoutForm() {
             <h2 className="text-xl font-bold text-white">결제 수단</h2>
 
             <div className="mt-6 space-y-3">
-              {/* 카드 결제 (토스페이먼츠) */}
+              {/* 카카오페이 */}
               <label
                 className={`flex cursor-pointer items-center gap-3 rounded-xl border p-4 transition-all duration-200 ${
-                  form.paymentMethod === "toss"
-                    ? "border-primary bg-primary/10"
-                    : "border-border hover:border-primary/50"
+                  form.paymentMethod === "kakaopay"
+                    ? "border-[#FEE500] bg-[#FEE500]/10"
+                    : "border-border hover:border-[#FEE500]/50"
                 }`}
               >
                 <input
                   type="radio"
                   name="payment"
-                  value="toss"
-                  checked={form.paymentMethod === "toss"}
-                  onChange={() => update("paymentMethod", "toss")}
+                  value="kakaopay"
+                  checked={form.paymentMethod === "kakaopay"}
+                  onChange={() => update("paymentMethod", "kakaopay")}
                   className="sr-only"
                 />
                 <span
                   className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
-                    form.paymentMethod === "toss"
-                      ? "border-primary"
+                    form.paymentMethod === "kakaopay"
+                      ? "border-[#FEE500]"
                       : "border-sub-text/40"
                   }`}
                 >
-                  {form.paymentMethod === "toss" && (
-                    <span className="h-2.5 w-2.5 rounded-full bg-primary" />
+                  {form.paymentMethod === "kakaopay" && (
+                    <span className="h-2.5 w-2.5 rounded-full bg-[#FEE500]" />
                   )}
                 </span>
-                <span className="text-base text-white">
-                  카드 결제
+                <span className="text-base font-semibold text-white">
+                  카카오페이
                 </span>
               </label>
 
@@ -560,13 +537,13 @@ function CheckoutForm() {
               </label>
             </div>
 
-            {/* 토스 안내 */}
-            {form.paymentMethod === "toss" && (
-              <div className="mt-5 rounded-xl border border-primary/20 bg-primary/5 p-4">
+            {/* 카카오페이 안내 */}
+            {form.paymentMethod === "kakaopay" && (
+              <div className="mt-5 rounded-xl border border-[#FEE500]/20 bg-[#FEE500]/5 p-4">
                 <p className="text-sm text-sub-text leading-relaxed">
-                  <span className="font-semibold text-primary">결제하기</span> 버튼을 누르면 토스페이먼츠 결제창이 열립니다.
+                  <span className="font-semibold text-[#FEE500]">결제하기</span> 버튼을 누르면 카카오페이 결제창으로 이동합니다.
                   <br />
-                  카드 정보를 입력하여 결제를 완료해 주세요.
+                  카카오톡 앱에서 결제를 승인해 주세요.
                 </p>
               </div>
             )}
@@ -618,13 +595,17 @@ function CheckoutForm() {
             disabled={!isFormValid || submitting}
             className={`mt-8 w-full rounded-xl py-4 text-lg font-semibold transition-all duration-200 ${
               isFormValid && !submitting
-                ? "bg-primary text-background hover:brightness-110 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-primary/25 cursor-pointer"
+                ? form.paymentMethod === "kakaopay"
+                  ? "bg-[#FEE500] text-[#3C1E1E] hover:brightness-110 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-[#FEE500]/25 cursor-pointer"
+                  : "bg-primary text-background hover:brightness-110 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-primary/25 cursor-pointer"
                 : "bg-border text-sub-text cursor-not-allowed"
             }`}
           >
             {submitting
               ? "처리 중..."
-              : `₩${totalAmount.toLocaleString("ko-KR")} 결제하기`}
+              : form.paymentMethod === "kakaopay"
+                ? `카카오페이로 ₩${totalAmount.toLocaleString("ko-KR")} 결제`
+                : `₩${totalAmount.toLocaleString("ko-KR")} 결제하기`}
           </button>
         </FadeInSection>
       </div>

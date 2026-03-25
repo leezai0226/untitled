@@ -19,53 +19,32 @@ function SuccessContent() {
       if (confirmedRef.current) return;
       confirmedRef.current = true;
 
-      const paymentKey = searchParams.get("paymentKey");
-      const orderId = searchParams.get("orderId");
-      const amount = searchParams.get("amount");
+      const pgToken = searchParams.get("pg_token");
 
-      if (!paymentKey || !orderId || !amount) {
+      if (!pgToken) {
         setErrorMessage("결제 정보가 올바르지 않습니다.");
         setStatus("error");
         return;
       }
 
-      // sessionStorage에서 메타데이터 가져오기
-      let metadata = {};
       try {
-        const raw = sessionStorage.getItem("checkout_metadata");
-        if (raw) {
-          metadata = JSON.parse(raw);
-          sessionStorage.removeItem("checkout_metadata");
-        }
-      } catch {
-        // ignore
-      }
-
-      try {
-        const res = await fetch("/api/payments/confirm", {
+        const res = await fetch("/api/kakaopay/approve", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            paymentKey,
-            orderId,
-            amount: Number(amount),
-            metadata,
-          }),
+          body: JSON.stringify({ pg_token: pgToken }),
         });
 
         const data = await res.json();
 
         if (res.ok && data.success) {
           setStatus("success");
-          // 3초 후 마이페이지로 이동
           setTimeout(() => router.push("/mypage"), 3000);
         } else {
-          // 금액 위변조 감지 시 fail 페이지로 강제 리다이렉트
-          if (data.code === "AMOUNT_MISMATCH" && data.redirect) {
-            router.replace(data.redirect);
-            return;
+          if (data.code === "RACE_CONDITION_SOLD_OUT") {
+            setErrorMessage(data.error);
+          } else {
+            setErrorMessage(data.error || "결제 승인에 실패했습니다.");
           }
-          setErrorMessage(data.error || "결제 승인에 실패했습니다.");
           setStatus("error");
         }
       } catch {
@@ -101,10 +80,10 @@ function SuccessContent() {
           </h1>
           <p className="mt-3 text-base text-sub-text">{errorMessage}</p>
           <button
-            onClick={() => router.push("/checkout?from=cart")}
+            onClick={() => router.push("/")}
             className="mt-8 rounded-xl bg-primary px-8 py-3 text-base font-semibold text-background transition-all duration-200 hover:brightness-110"
           >
-            다시 시도하기
+            홈으로 돌아가기
           </button>
         </div>
       </div>
