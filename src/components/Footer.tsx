@@ -50,6 +50,7 @@ export default function Footer() {
         <div className="mt-10 border-t border-border pt-6">
           <div className="text-xs leading-relaxed text-gray-500 space-y-1">
             <p>
+              상호명: 이재스튜디오 &nbsp;&nbsp;&nbsp;
               사업자등록번호: 457-11-02461 &nbsp;&nbsp;&nbsp;
               통신판매업신고번호: 2024-인천서구-2770
             </p>
