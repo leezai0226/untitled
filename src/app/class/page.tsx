@@ -82,7 +82,7 @@ const tabs: TabData[] = [
   {
     key: "vlog",
     icon: "🎬",
-    label: "초보 유튜버 브이로그 반,
+    label: "초보 유튜버 브이로그 반",
     recommendations: [
       { tag: "입문자", desc: "영상 촬영과 편집을 배워보고 싶은 분" },
       { tag: "예비 유튜버", desc: "유튜브 시작하고 싶은데 고민만 하고 있던 분" },
