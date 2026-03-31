@@ -41,6 +41,7 @@ export default function AdminShopNewPage() {
   const [unlimited, setUnlimited] = useState(true);
   const [remainingSeats, setRemainingSeats] = useState<number | "">("");
   const [faqs, setFaqs] = useState<{ q: string; a: string }[]>([]);
+  const [refundPolicy, setRefundPolicy] = useState<{ q: string; a: string }[]>([]);
 
   /* ── 파일 상태 ── */
   const [thumbnailFile, setThumbnailFile] = useState<File | null>(null);
@@ -159,6 +160,7 @@ export default function AdminShopNewPage() {
           description: description.trim(),
           remaining_seats: unlimited ? null : Number(remainingSeats),
           faqs: faqs.filter((f) => f.q.trim() && f.a.trim()),
+          refund_policy: refundPolicy.filter((f) => f.q.trim() && f.a.trim()),
           thumbnail_url: thumbnailUrl,
           detail_images: detailUrls,
           file_url: filePath,
@@ -468,6 +470,72 @@ export default function AdminShopNewPage() {
             className="w-full rounded-xl border-2 border-dashed border-border py-4 text-center text-sm text-sub-text transition-colors hover:border-primary/50 hover:text-primary"
           >
             + 자주 묻는 질문 추가
+          </button>
+        </div>
+
+        {/* ── 환불 규정 ── */}
+        <div className="mt-6">
+          <label className="block text-sm font-medium text-sub-text mb-2">
+            환불 규정{" "}
+            <span className="text-sub-text/60">(선택)</span>
+          </label>
+
+          {refundPolicy.length > 0 && (
+            <div className="space-y-4 mb-4">
+              {refundPolicy.map((item, i) => (
+                <div
+                  key={i}
+                  className="rounded-xl border border-border bg-card p-4"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-xs font-semibold text-yellow-400">
+                      환불 #{i + 1}
+                    </span>
+                    <button
+                      onClick={() =>
+                        setRefundPolicy((prev) => prev.filter((_, idx) => idx !== i))
+                      }
+                      className="text-xs text-sub-text hover:text-red-400 transition-colors"
+                    >
+                      삭제
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    value={item.q}
+                    onChange={(e) =>
+                      setRefundPolicy((prev) =>
+                        prev.map((f, idx) =>
+                          idx === i ? { ...f, q: e.target.value } : f
+                        )
+                      )
+                    }
+                    placeholder="항목 (예: 7일 전 취소)"
+                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-white placeholder:text-sub-text/50 focus:border-primary focus:outline-none transition-colors"
+                  />
+                  <textarea
+                    value={item.a}
+                    onChange={(e) =>
+                      setRefundPolicy((prev) =>
+                        prev.map((f, idx) =>
+                          idx === i ? { ...f, a: e.target.value } : f
+                        )
+                      )
+                    }
+                    rows={2}
+                    placeholder="상세 내용 (예: 결제 금액의 100% 환불)"
+                    className="mt-2 w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm text-white placeholder:text-sub-text/50 focus:border-primary focus:outline-none transition-colors"
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+
+          <button
+            onClick={() => setRefundPolicy((prev) => [...prev, { q: "", a: "" }])}
+            className="w-full rounded-xl border-2 border-dashed border-border py-4 text-center text-sm text-sub-text transition-colors hover:border-yellow-400/50 hover:text-yellow-400"
+          >
+            + 환불 규정 추가
           </button>
         </div>
 

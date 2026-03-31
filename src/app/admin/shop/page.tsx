@@ -45,7 +45,7 @@ export default function AdminShopPage() {
   const fetchProducts = useCallback(async () => {
     const { data, error } = await supabase
       .from("products")
-      .select("id, title, price, category, thumbnail_url, sort_order, created_at, remaining_seats, faqs")
+      .select("*")
       .order("sort_order", { ascending: true })
       .order("created_at", { ascending: false });
 

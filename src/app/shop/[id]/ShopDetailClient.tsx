@@ -25,6 +25,7 @@ interface Product {
   file_url: string | null;
   remaining_seats: number | null;
   faqs: FaqItem[] | null;
+  refund_policy: FaqItem[] | null;
 }
 
 function formatPrice(n: number) {
@@ -44,7 +45,7 @@ export default function ShopDetailClient({ productId }: { productId: string }) {
     const fetchProduct = async () => {
       const { data, error } = await supabase
         .from("products")
-        .select("id, title, price, category, description, thumbnail_url, detail_images, file_url, remaining_seats, faqs")
+        .select("id, title, price, category, description, thumbnail_url, detail_images, file_url, remaining_seats, faqs, refund_policy")
         .eq("id", productId)
         .single();
 
@@ -338,6 +339,20 @@ export default function ShopDetailClient({ productId }: { productId: string }) {
               </div>
             </div>
           )}
+
+          {/* 환불 규정 아코디언 */}
+          {product.refund_policy && product.refund_policy.length > 0 && (
+            <div className="mt-16 space-y-6">
+              <h2 className="text-xl font-bold text-white">
+                환불 <span className="text-yellow-400">규정</span>
+              </h2>
+              <div className="space-y-3">
+                {product.refund_policy.map((item, i) => (
+                  <FaqAccordionItem key={i} q={item.q} a={item.a} accent="yellow" />
+                ))}
+              </div>
+            </div>
+          )}
         </FadeInSection>
       </section>
     </div>
@@ -345,10 +360,11 @@ export default function ShopDetailClient({ productId }: { productId: string }) {
 }
 
 /* ── FAQ 아코디언 아이템 ── */
-function FaqAccordionItem({ q, a }: { q: string; a: string }) {
+function FaqAccordionItem({ q, a, accent = "primary" }: { q: string; a: string; accent?: "primary" | "yellow" }) {
+  const hoverBorder = accent === "yellow" ? "hover:border-yellow-400/30" : "hover:border-primary/30";
   const [open, setOpen] = useState(false);
   return (
-    <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-primary/30">
+    <div className={`rounded-xl border border-border bg-card transition-all duration-200 ${hoverBorder}`}>
       <button
         onClick={() => setOpen(!open)}
         className="flex w-full items-center justify-between p-5 text-left"
