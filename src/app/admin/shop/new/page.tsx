@@ -167,6 +167,10 @@ export default function AdminShopNewPage() {
         }),
       });
 
+      const insertContentType = insertRes.headers.get("content-type") || "";
+      if (!insertContentType.includes("application/json")) {
+        throw new Error(`서버 오류 (${insertRes.status}). 배포가 완료되었는지 확인해주세요.`);
+      }
       const insertData = await insertRes.json();
       if (!insertRes.ok)
         throw new Error(insertData.error || "상품 등록 실패");
