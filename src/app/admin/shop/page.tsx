@@ -5,6 +5,11 @@ import Link from "next/link";
 import { createClient } from "@/utils/supabase/client";
 
 /* ─── 타입 ─── */
+interface FaqItem {
+  q: string;
+  a: string;
+}
+
 interface Product {
   id: string;
   title: string;
@@ -14,6 +19,7 @@ interface Product {
   sort_order: number;
   created_at: string;
   remaining_seats: number | null;
+  faqs: FaqItem[] | null;
 }
 
 function formatDate(iso: string) {
@@ -39,8 +45,7 @@ export default function AdminShopPage() {
   const fetchProducts = useCallback(async () => {
     const { data, error } = await supabase
       .from("products")
-      .select("id, title, price, category, thumbnail_url, sort_order, created_at, remaining_seats")
-      .eq("type", "digital_asset")
+      .select("id, title, price, category, thumbnail_url, sort_order, created_at, remaining_seats, faqs")
       .order("sort_order", { ascending: true })
       .order("created_at", { ascending: false });
 
@@ -204,6 +209,9 @@ export default function AdminShopPage() {
                       재고
                     </th>
                     <th className="px-4 py-4 text-sm font-semibold text-sub-text">
+                      FAQ
+                    </th>
+                    <th className="px-4 py-4 text-sm font-semibold text-sub-text">
                       등록일
                     </th>
                     <th className="px-4 py-4 text-sm font-semibold text-sub-text text-center">
@@ -291,6 +299,16 @@ export default function AdminShopPage() {
                           <span className="font-semibold text-green-400">
                             {p.remaining_seats}명
                           </span>
+                        )}
+                      </td>
+                      {/* FAQ */}
+                      <td className="px-4 py-4 text-sm whitespace-nowrap">
+                        {p.faqs && p.faqs.length > 0 ? (
+                          <span className="inline-flex items-center gap-1 rounded-lg bg-primary/10 px-2 py-1 text-xs font-semibold text-primary">
+                            {p.faqs.length}개
+                          </span>
+                        ) : (
+                          <span className="text-sub-text/50">—</span>
                         )}
                       </td>
                       {/* 등록일 */}
@@ -381,6 +399,13 @@ export default function AdminShopPage() {
                           </span>
                         )}
                       </p>
+                      {p.faqs && p.faqs.length > 0 && (
+                        <p className="mt-0.5">
+                          <span className="inline-flex items-center gap-1 rounded-lg bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
+                            FAQ {p.faqs.length}개
+                          </span>
+                        </p>
+                      )}
                     </div>
                   </div>
 

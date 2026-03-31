@@ -12,6 +12,11 @@ const CATEGORY_OPTIONS = [
   { value: "Free", label: "Free" },
 ] as const;
 
+interface FaqItem {
+  q: string;
+  a: string;
+}
+
 interface ProductData {
   id: string;
   title: string;
@@ -23,6 +28,7 @@ interface ProductData {
   file_url: string | null;
   sort_order: number;
   remaining_seats: number | null;
+  faqs: FaqItem[] | null;
 }
 
 export default function AdminShopEditPage() {
@@ -42,6 +48,7 @@ export default function AdminShopEditPage() {
   const [sortOrder, setSortOrder] = useState(0);
   const [unlimited, setUnlimited] = useState(true);
   const [remainingSeats, setRemainingSeats] = useState<number | "">("");
+  const [faqs, setFaqs] = useState<FaqItem[]>([]);
 
   // 기존 이미지 URL
   const [existingThumbnail, setExistingThumbnail] = useState<string | null>(null);
@@ -85,6 +92,7 @@ export default function AdminShopEditPage() {
       setExistingThumbnail(p.thumbnail_url);
       setExistingDetails(p.detail_images || []);
       setExistingFileUrl(p.file_url);
+      setFaqs(Array.isArray(p.faqs) ? p.faqs : []);
       setLoading(false);
     };
     fetchProduct();
@@ -199,6 +207,7 @@ export default function AdminShopEditPage() {
           file_url: finalFileUrl,
           sort_order: sortOrder,
           remaining_seats: unlimited ? null : Number(remainingSeats),
+          faqs: faqs.filter((f) => f.q.trim() && f.a.trim()),
         }),
       });
 
@@ -516,6 +525,72 @@ export default function AdminShopEditPage() {
               클릭하여 파일 선택 (zip, pdf 등)
             </button>
           )}
+        </div>
+
+        {/* ── 자주 묻는 질문 (FAQ) ── */}
+        <div className="mt-6">
+          <label className="block text-sm font-medium text-sub-text mb-2">
+            자주 묻는 질문 (FAQ){" "}
+            <span className="text-sub-text/60">(선택)</span>
+          </label>
+
+          {faqs.length > 0 && (
+            <div className="space-y-4 mb-4">
+              {faqs.map((faq, i) => (
+                <div
+                  key={i}
+                  className="rounded-xl border border-border bg-card p-4"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-xs font-semibold text-primary">
+                      FAQ #{i + 1}
+                    </span>
+                    <button
+                      onClick={() =>
+                        setFaqs((prev) => prev.filter((_, idx) => idx !== i))
+                      }
+                      className="text-xs text-sub-text hover:text-red-400 transition-colors"
+                    >
+                      삭제
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    value={faq.q}
+                    onChange={(e) =>
+                      setFaqs((prev) =>
+                        prev.map((f, idx) =>
+                          idx === i ? { ...f, q: e.target.value } : f
+                        )
+                      )
+                    }
+                    placeholder="질문 (Q)"
+                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-white placeholder:text-sub-text/50 focus:border-primary focus:outline-none transition-colors"
+                  />
+                  <textarea
+                    value={faq.a}
+                    onChange={(e) =>
+                      setFaqs((prev) =>
+                        prev.map((f, idx) =>
+                          idx === i ? { ...f, a: e.target.value } : f
+                        )
+                      )
+                    }
+                    rows={2}
+                    placeholder="답변 (A)"
+                    className="mt-2 w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm text-white placeholder:text-sub-text/50 focus:border-primary focus:outline-none transition-colors"
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+
+          <button
+            onClick={() => setFaqs((prev) => [...prev, { q: "", a: "" }])}
+            className="w-full rounded-xl border-2 border-dashed border-border py-4 text-center text-sm text-sub-text transition-colors hover:border-primary/50 hover:text-primary"
+          >
+            + 자주 묻는 질문 추가
+          </button>
         </div>
 
         {/* ── 수정 완료 버튼 ── */}

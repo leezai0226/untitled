@@ -4,10 +4,16 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
+import { motion, AnimatePresence } from "framer-motion";
 import FadeInSection from "@/components/FadeInSection";
 import { createClient } from "@/utils/supabase/client";
 
 /* ── 타입 ── */
+interface FaqItem {
+  q: string;
+  a: string;
+}
+
 interface Product {
   id: string;
   title: string;
@@ -18,6 +24,7 @@ interface Product {
   detail_images: string[];
   file_url: string | null;
   remaining_seats: number | null;
+  faqs: FaqItem[] | null;
 }
 
 function formatPrice(n: number) {
@@ -37,7 +44,7 @@ export default function ShopDetailClient({ productId }: { productId: string }) {
     const fetchProduct = async () => {
       const { data, error } = await supabase
         .from("products")
-        .select("id, title, price, category, description, thumbnail_url, detail_images, file_url, remaining_seats")
+        .select("id, title, price, category, description, thumbnail_url, detail_images, file_url, remaining_seats, faqs")
         .eq("id", productId)
         .single();
 
@@ -317,8 +324,61 @@ export default function ShopDetailClient({ productId }: { productId: string }) {
               </div>
             </div>
           )}
+
+          {/* FAQ 아코디언 */}
+          {product.faqs && product.faqs.length > 0 && (
+            <div className="mt-16 space-y-6">
+              <h2 className="text-xl font-bold text-white">
+                자주 묻는 <span className="text-primary">질문</span>
+              </h2>
+              <div className="space-y-3">
+                {product.faqs.map((faq, i) => (
+                  <FaqAccordionItem key={i} q={faq.q} a={faq.a} />
+                ))}
+              </div>
+            </div>
+          )}
         </FadeInSection>
       </section>
+    </div>
+  );
+}
+
+/* ── FAQ 아코디언 아이템 ── */
+function FaqAccordionItem({ q, a }: { q: string; a: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="rounded-xl border border-border bg-card transition-all duration-200 hover:border-primary/30">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex w-full items-center justify-between p-5 text-left"
+      >
+        <span className="pr-4 text-base font-semibold text-white">Q. {q}</span>
+        <motion.span
+          animate={{ rotate: open ? 180 : 0 }}
+          transition={{ duration: 0.25 }}
+          className="shrink-0 text-xl text-white"
+        >
+          ▾
+        </motion.span>
+      </button>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.3, ease: "easeInOut" }}
+            className="overflow-hidden"
+          >
+            <div className="border-t border-border px-5 pb-5 pt-4">
+              <p className="text-base leading-relaxed text-white whitespace-pre-line">
+                A. {a}
+              </p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

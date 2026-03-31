@@ -56,12 +56,13 @@ export default function Footer() {
             </p>
             <p>
               대표: 이영재 &nbsp;&nbsp;&nbsp;
-              주소: 인천광역시 서구 서곶로 12 6동 503호
+              주소: 인천광역시 서구 서곶로 12 6동 503호&nbsp;&nbsp;&nbsp;
+              문의: 010-2517-1826
             </p>
           </div>
           <div className="mt-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <p className="text-xs text-gray-500">
-              &copy; Corp.
+              &copy; Untitled Studio Corp.
             </p>
             <div className="flex gap-1 text-xs text-gray-500">
               <Link
