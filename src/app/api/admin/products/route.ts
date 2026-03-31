@@ -9,97 +9,113 @@ const rateLimiter = createRateLimiter({ windowMs: 60_000, maxRequests: 30 });
 
 /* ── POST: 상품 등록 ── */
 export async function POST(request: NextRequest) {
-  const blocked = rateLimiter(request);
-  if (blocked) return blocked;
-  const auth = await verifyAdmin();
-  if (!auth.authorized) {
-    return NextResponse.json({ error: auth.error }, { status: auth.status });
-  }
+  try {
+    const blocked = rateLimiter(request);
+    if (blocked) return blocked;
+    const auth = await verifyAdmin();
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status });
+    }
 
-  const body = await request.json();
-  const supabase = await createClient();
+    const body = await request.json();
+    const supabase = await createClient();
 
-  const insertData: Record<string, unknown> = {
-    title: sanitize(body.title),
-    type: "digital_asset",
-    category: sanitize(body.category),
-    price: Number(body.price) || 0,
-    description: sanitize(body.description),
-    thumbnail_url: body.thumbnail_url || null,
-    detail_images: body.detail_images || [],
-    file_url: body.file_url || null,
-    faqs: Array.isArray(body.faqs) ? body.faqs : [],
-    refund_policy: Array.isArray(body.refund_policy) ? body.refund_policy : [],
-  };
+    const insertData: Record<string, unknown> = {
+      title: sanitize(body.title),
+      type: "digital_asset",
+      category: sanitize(body.category),
+      price: Number(body.price) || 0,
+      description: sanitize(body.description),
+      thumbnail_url: body.thumbnail_url || null,
+      detail_images: body.detail_images || [],
+      file_url: body.file_url || null,
+      faqs: Array.isArray(body.faqs) ? body.faqs : [],
+      refund_policy: Array.isArray(body.refund_policy) ? body.refund_policy : [],
+    };
 
-  // remaining_seats: null = 무제한, 숫자 = 잔여 수량
-  if (body.remaining_seats !== undefined) {
-    insertData.remaining_seats =
-      body.remaining_seats === null ? null : Number(body.remaining_seats);
-  }
+    // remaining_seats: null = 무제한, 숫자 = 잔여 수량
+    if (body.remaining_seats !== undefined) {
+      insertData.remaining_seats =
+        body.remaining_seats === null ? null : Number(body.remaining_seats);
+    }
 
-  const { error } = await supabase.from("products").insert(insertData);
+    const { error } = await supabase.from("products").insert(insertData);
 
-  if (error) {
+    if (error) {
+      return NextResponse.json(
+        { error: `상품 등록 실패: ${error.message}` },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (err: unknown) {
+    console.error("POST /api/admin/products 에러:", err);
     return NextResponse.json(
-      { error: `상품 등록 실패: ${error.message}` },
+      { error: err instanceof Error ? err.message : "서버 내부 오류" },
       { status: 500 }
     );
   }
-
-  return NextResponse.json({ success: true });
 }
 
 /* ── PUT: 상품 수정 ── */
 export async function PUT(request: NextRequest) {
-  const blocked = rateLimiter(request);
-  if (blocked) return blocked;
+  try {
+    const blocked = rateLimiter(request);
+    if (blocked) return blocked;
 
-  const auth = await verifyAdmin();
-  if (!auth.authorized) {
-    return NextResponse.json({ error: auth.error }, { status: auth.status });
-  }
+    const auth = await verifyAdmin();
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status });
+    }
 
-  const body = await request.json();
-  const { id, ...fields } = body;
+    const body = await request.json();
+    const { id, ...fields } = body;
 
-  if (!id) {
-    return NextResponse.json({ error: "상품 ID가 필요합니다." }, { status: 400 });
-  }
+    if (!id) {
+      return NextResponse.json({ error: "상품 ID가 필요합니다." }, { status: 400 });
+    }
 
-  const supabase = await createClient();
+    const supabase = await createClient();
 
-  // 허용된 필드만 업데이트 (임의 필드 주입 방지)
-  const updateData: Record<string, unknown> = {};
+    // 허용된 필드만 업데이트 (임의 필드 주입 방지)
+    const updateData: Record<string, unknown> = {};
 
-  if (fields.title !== undefined) updateData.title = sanitize(fields.title);
-  if (fields.category !== undefined) updateData.category = sanitize(fields.category);
-  if (fields.price !== undefined) updateData.price = Number(fields.price);
-  if (fields.description !== undefined) updateData.description = sanitize(fields.description);
-  if (fields.thumbnail_url !== undefined) updateData.thumbnail_url = fields.thumbnail_url;
-  if (fields.detail_images !== undefined) updateData.detail_images = fields.detail_images;
-  if (fields.file_url !== undefined) updateData.file_url = fields.file_url;
-  if (fields.sort_order !== undefined) updateData.sort_order = Number(fields.sort_order);
-  if (fields.faqs !== undefined) updateData.faqs = Array.isArray(fields.faqs) ? fields.faqs : [];
-  if (fields.refund_policy !== undefined) updateData.refund_policy = Array.isArray(fields.refund_policy) ? fields.refund_policy : [];
-  if (fields.remaining_seats !== undefined) {
-    updateData.remaining_seats =
-      fields.remaining_seats === null ? null : Number(fields.remaining_seats);
-  }
+    if (fields.title !== undefined) updateData.title = sanitize(fields.title);
+    if (fields.category !== undefined) updateData.category = sanitize(fields.category);
+    if (fields.price !== undefined) updateData.price = Number(fields.price);
+    if (fields.description !== undefined) updateData.description = sanitize(fields.description);
+    if (fields.thumbnail_url !== undefined) updateData.thumbnail_url = fields.thumbnail_url;
+    if (fields.detail_images !== undefined) updateData.detail_images = fields.detail_images;
+    if (fields.file_url !== undefined) updateData.file_url = fields.file_url;
+    if (fields.sort_order !== undefined) updateData.sort_order = Number(fields.sort_order);
+    if (fields.faqs !== undefined) updateData.faqs = Array.isArray(fields.faqs) ? fields.faqs : [];
+    if (fields.refund_policy !== undefined) updateData.refund_policy = Array.isArray(fields.refund_policy) ? fields.refund_policy : [];
+    if (fields.remaining_seats !== undefined) {
+      updateData.remaining_seats =
+        fields.remaining_seats === null ? null : Number(fields.remaining_seats);
+    }
 
-  const { error } = await supabase
-    .from("products")
-    .update(updateData)
-    .eq("id", id);
+    const { error } = await supabase
+      .from("products")
+      .update(updateData)
+      .eq("id", id);
 
-  if (error) {
+    if (error) {
+      return NextResponse.json(
+        { error: `상품 수정 실패: ${error.message}` },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (err: unknown) {
+    console.error("PUT /api/admin/products 에러:", err);
     return NextResponse.json(
-      { error: `상품 수정 실패: ${error.message}` },
+      { error: err instanceof Error ? err.message : "서버 내부 오류" },
       { status: 500 }
     );
   }
-
-  return NextResponse.json({ success: true });
 }
 
 /* ── DELETE: 상품 삭제 ── */
