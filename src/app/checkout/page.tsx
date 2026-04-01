@@ -9,6 +9,25 @@ import FadeInSection from "@/components/FadeInSection";
 import { sanitize } from "@/utils/sanitize";
 import type { User } from "@supabase/supabase-js";
 
+/* ── 포트원 V1 타입 선언 ── */
+declare global {
+  interface Window {
+    IMP?: {
+      init: (impUid: string) => void;
+      request_pay: (
+        params: Record<string, unknown>,
+        callback: (response: {
+          success: boolean;
+          imp_uid?: string;
+          merchant_uid?: string;
+          error_msg?: string;
+          error_code?: string;
+        }) => void
+      ) => void;
+    };
+  }
+}
+
 /* ─────────────── 타입 ─────────────── */
 
 interface FormData {
@@ -16,7 +35,7 @@ interface FormData {
   phone: string;
   experienceLevel: string;
   message: string;
-  paymentMethod: "kakaopay" | "bank_transfer" | "";
+  paymentMethod: "card" | "bank_transfer" | "";
   depositorName: string;
   cashReceiptNumber: string;
 }
@@ -137,15 +156,118 @@ function CheckoutForm() {
   const isFormValid = fromCart
     ? form.name.trim() !== "" &&
       form.phone.trim() !== "" &&
-      (form.paymentMethod === "kakaopay" ||
+      (form.paymentMethod === "card" ||
         (form.paymentMethod === "bank_transfer" &&
           form.depositorName.trim() !== ""))
     : form.name.trim() !== "" &&
       form.phone.trim() !== "" &&
       form.experienceLevel !== "" &&
-      (form.paymentMethod === "kakaopay" ||
+      (form.paymentMethod === "card" ||
         (form.paymentMethod === "bank_transfer" &&
           form.depositorName.trim() !== ""));
+
+  /* ── 포트원 V1 결제 ── */
+  const handlePortonePayment = () => {
+    const IMP = window.IMP;
+    if (!IMP) {
+      alert("결제 모듈을 불러오는 중입니다. 잠시 후 다시 시도해 주세요.");
+      setSubmitting(false);
+      return;
+    }
+
+    const impUid = process.env.NEXT_PUBLIC_IMP_UID;
+    if (!impUid) {
+      alert("결제 설정 오류입니다. 관리자에게 문의해 주세요.");
+      setSubmitting(false);
+      return;
+    }
+
+    IMP.init(impUid);
+
+    const orderType = fromCart ? "shop" : "class";
+    const merchantUid = `${orderType}_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+
+    const orderName = fromCart
+      ? cartItems.length === 1
+        ? cartItems[0].product.title
+        : `${cartItems[0].product.title} 외 ${cartItems.length - 1}건`
+      : className || "원데이 클래스";
+
+    // 결제 메타데이터 (서버 검증 시 전달)
+    const metadata: Record<string, unknown> = {
+      orderType,
+      name: form.name.trim(),
+      phone: form.phone.trim(),
+    };
+
+    if (!fromCart) {
+      metadata.className = className;
+      metadata.schedule = schedule;
+      metadata.experienceLevel = form.experienceLevel;
+      metadata.message = form.message.trim() || null;
+      if (scheduleId) metadata.scheduleId = scheduleId;
+      if (classId) metadata.classId = classId;
+    }
+
+    IMP.request_pay(
+      {
+        pg: "html5_inicis",
+        pay_method: "card",
+        merchant_uid: merchantUid,
+        name: orderName,
+        amount: totalAmount,
+        buyer_email: user?.email || "",
+        buyer_name: form.name.trim(),
+        buyer_tel: form.phone.trim(),
+      },
+      async (response) => {
+        if (response.success && response.imp_uid && response.merchant_uid) {
+          // 결제 성공 → 서버 사후 검증
+          try {
+            const verifyRes = await fetch("/api/portone/verify", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                imp_uid: response.imp_uid,
+                merchant_uid: response.merchant_uid,
+                metadata,
+              }),
+            });
+
+            const contentType = verifyRes.headers.get("content-type") || "";
+            if (!contentType.includes("application/json")) {
+              throw new Error(`서버 오류 (${verifyRes.status})`);
+            }
+
+            const verifyData = await verifyRes.json();
+
+            if (verifyRes.ok && verifyData.success) {
+              router.push("/checkout/success");
+            } else {
+              const msg = verifyData.error || "결제 검증에 실패했습니다.";
+              router.push(
+                `/checkout/fail?code=${verifyData.code || "VERIFY_FAILED"}&message=${encodeURIComponent(msg)}`
+              );
+            }
+          } catch (err: unknown) {
+            const msg =
+              err instanceof Error ? err.message : "서버 오류가 발생했습니다.";
+            router.push(
+              `/checkout/fail?code=SERVER_ERROR&message=${encodeURIComponent(msg)}`
+            );
+          }
+        } else {
+          // 결제 실패 또는 사용자 취소
+          const errorMsg = response.error_msg || "결제가 취소되었습니다.";
+          const errorCode = response.error_code || "USER_CANCEL";
+          router.push(
+            `/checkout/fail?code=${errorCode}&message=${encodeURIComponent(errorMsg)}`
+          );
+        }
+        setSubmitting(false);
+      }
+    );
+  };
 
   /* ── 제출 ── */
   const handleSubmit = async () => {
@@ -153,49 +275,9 @@ function CheckoutForm() {
     setSubmitting(true);
 
     try {
-      if (form.paymentMethod === "kakaopay") {
-        /* ── 카카오페이 결제 ── */
-        const orderType = fromCart ? "shop" : "class";
-
-        const orderName = fromCart
-          ? cartItems.length === 1
-            ? cartItems[0].product.title
-            : `${cartItems[0].product.title} 외 ${cartItems.length - 1}건`
-          : className || "원데이 클래스";
-
-        const metadata: Record<string, unknown> = {
-          name: form.name.trim(),
-          phone: form.phone.trim(),
-        };
-
-        if (!fromCart) {
-          metadata.className = className;
-          metadata.schedule = schedule;
-          metadata.experienceLevel = form.experienceLevel;
-          metadata.message = form.message.trim() || null;
-          if (scheduleId) metadata.scheduleId = scheduleId;
-          if (classId) metadata.classId = classId;
-        }
-
-        const res = await fetch("/api/kakaopay/ready", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ orderType, orderName, metadata }),
-        });
-
-        const data = await res.json();
-
-        if (!res.ok) {
-          throw new Error(data.error || "카카오페이 결제 준비에 실패했습니다.");
-        }
-
-        // 모바일/PC 분기 리다이렉트
-        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-        const redirectUrl = isMobile
-          ? data.redirect_mobile_url
-          : data.redirect_pc_url;
-
-        window.location.href = redirectUrl;
+      if (form.paymentMethod === "card") {
+        /* ── 포트원 V1 카드 결제 ── */
+        handlePortonePayment();
       } else if (form.paymentMethod === "bank_transfer") {
         /* ── 계좌 이체 (기존 로직 유지) ── */
         if (fromCart) {
@@ -258,10 +340,10 @@ function CheckoutForm() {
           alert("수강신청이 완료되었습니다! 입금 확인 후 등록이 확정됩니다.");
           router.push("/");
         }
+        setSubmitting(false);
       }
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : "오류가 발생했습니다.");
-    } finally {
       setSubmitting(false);
     }
   };
@@ -474,35 +556,38 @@ function CheckoutForm() {
             <h2 className="text-xl font-bold text-white">결제 수단</h2>
 
             <div className="mt-6 space-y-3">
-              {/* 카카오페이 */}
+              {/* 신용카드 (포트원) */}
               <label
                 className={`flex cursor-pointer items-center gap-3 rounded-xl border p-4 transition-all duration-200 ${
-                  form.paymentMethod === "kakaopay"
-                    ? "border-[#FEE500] bg-[#FEE500]/10"
-                    : "border-border hover:border-[#FEE500]/50"
+                  form.paymentMethod === "card"
+                    ? "border-primary bg-primary/10"
+                    : "border-border hover:border-primary/50"
                 }`}
               >
                 <input
                   type="radio"
                   name="payment"
-                  value="kakaopay"
-                  checked={form.paymentMethod === "kakaopay"}
-                  onChange={() => update("paymentMethod", "kakaopay")}
+                  value="card"
+                  checked={form.paymentMethod === "card"}
+                  onChange={() => update("paymentMethod", "card")}
                   className="sr-only"
                 />
                 <span
                   className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
-                    form.paymentMethod === "kakaopay"
-                      ? "border-[#FEE500]"
+                    form.paymentMethod === "card"
+                      ? "border-primary"
                       : "border-sub-text/40"
                   }`}
                 >
-                  {form.paymentMethod === "kakaopay" && (
-                    <span className="h-2.5 w-2.5 rounded-full bg-[#FEE500]" />
+                  {form.paymentMethod === "card" && (
+                    <span className="h-2.5 w-2.5 rounded-full bg-primary" />
                   )}
                 </span>
                 <span className="text-base font-semibold text-white">
-                  카카오페이
+                  신용카드 결제
+                </span>
+                <span className="text-xs text-sub-text ml-auto">
+                  모든 카드 사용 가능
                 </span>
               </label>
 
@@ -537,13 +622,14 @@ function CheckoutForm() {
               </label>
             </div>
 
-            {/* 카카오페이 안내 */}
-            {form.paymentMethod === "kakaopay" && (
-              <div className="mt-5 rounded-xl border border-[#FEE500]/20 bg-[#FEE500]/5 p-4">
+            {/* 신용카드 안내 */}
+            {form.paymentMethod === "card" && (
+              <div className="mt-5 rounded-xl border border-primary/20 bg-primary/5 p-4">
                 <p className="text-sm text-sub-text leading-relaxed">
-                  <span className="font-semibold text-[#FEE500]">결제하기</span> 버튼을 누르면 카카오페이 결제창으로 이동합니다.
+                  <span className="font-semibold text-primary">결제하기</span>{" "}
+                  버튼을 누르면 결제창이 열립니다.
                   <br />
-                  카카오톡 앱에서 결제를 승인해 주세요.
+                  신용카드, 체크카드 등 모든 카드로 결제 가능합니다.
                 </p>
               </div>
             )}
@@ -595,17 +681,13 @@ function CheckoutForm() {
             disabled={!isFormValid || submitting}
             className={`mt-8 w-full rounded-xl py-4 text-lg font-semibold transition-all duration-200 ${
               isFormValid && !submitting
-                ? form.paymentMethod === "kakaopay"
-                  ? "bg-[#FEE500] text-[#3C1E1E] hover:brightness-110 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-[#FEE500]/25 cursor-pointer"
-                  : "bg-primary text-background hover:brightness-110 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-primary/25 cursor-pointer"
+                ? "bg-primary text-background hover:brightness-110 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-primary/25 cursor-pointer"
                 : "bg-border text-sub-text cursor-not-allowed"
             }`}
           >
             {submitting
-              ? "처리 중..."
-              : form.paymentMethod === "kakaopay"
-                ? `카카오페이로 ₩${totalAmount.toLocaleString("ko-KR")} 결제`
-                : `₩${totalAmount.toLocaleString("ko-KR")} 결제하기`}
+              ? "결제 처리 중..."
+              : `₩${totalAmount.toLocaleString("ko-KR")} 결제하기`}
           </button>
         </FadeInSection>
       </div>

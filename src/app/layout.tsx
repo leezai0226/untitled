@@ -30,6 +30,8 @@ export default function RootLayout({
           crossOrigin="anonymous"
           href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css"
         />
+        {/* 포트원 V1 (구 아임포트) 결제 SDK */}
+        <script src="https://cdn.iamport.kr/v1/iamport.js" defer />
       </head>
       <body className={`${montserrat.variable} antialiased`}>
         <Header />
