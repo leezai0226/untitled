@@ -369,7 +369,7 @@ function FaqAccordionItem({ q, a, accent = "primary" }: { q: string; a: string; 
         onClick={() => setOpen(!open)}
         className="flex w-full items-center justify-between p-5 text-left"
       >
-        <span className="pr-4 text-base font-semibold text-white">Q. {q}</span>
+        <span className="pr-4 text-base font-semibold text-white">{accent === "primary" ? `Q. ${q}` : q}</span>
         <motion.span
           animate={{ rotate: open ? 180 : 0 }}
           transition={{ duration: 0.25 }}
@@ -389,7 +389,7 @@ function FaqAccordionItem({ q, a, accent = "primary" }: { q: string; a: string; 
           >
             <div className="border-t border-border px-5 pb-5 pt-4">
               <p className="text-base leading-relaxed text-white whitespace-pre-line">
-                A. {a}
+                {accent === "primary" ? `A. ${a}` : a}
               </p>
             </div>
           </motion.div>
