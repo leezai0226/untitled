@@ -225,12 +225,17 @@ export async function POST(request: NextRequest) {
 
       // 좌석 복구 (schedule_id가 있는 경우)
       if (order.schedule_id) {
-        await adminClient.rpc("increment_schedule_seats", {
-          p_schedule_id: order.schedule_id,
-          p_quantity: 1,
-        }).catch((err: Error) => {
-          console.error("[좌석 복구 실패]", err.message);
-        });
+        try {
+          const { error: seatError } = await adminClient.rpc("increment_schedule_seats", {
+            p_schedule_id: order.schedule_id,
+            p_quantity: 1,
+          });
+          if (seatError) {
+            console.error("[좌석 복구 실패]", seatError.message);
+          }
+        } catch (err) {
+          console.error("[좌석 복구 실패]", err);
+        }
       }
 
       const refundMsg =

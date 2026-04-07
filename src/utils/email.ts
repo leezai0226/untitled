@@ -1,9 +1,13 @@
 import { Resend } from "resend";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "untitled.mooje@gmail.com";
 const FROM_EMAIL = process.env.FROM_EMAIL || "onboarding@resend.dev";
+
+function getResendClient(): Resend | null {
+  const key = process.env.RESEND_API_KEY;
+  if (!key) return null;
+  return new Resend(key);
+}
 
 interface PaymentNotification {
   orderType: "shop" | "class";
@@ -22,7 +26,8 @@ interface PaymentNotification {
  */
 export async function sendPaymentNotification(data: PaymentNotification) {
   try {
-    if (!process.env.RESEND_API_KEY) {
+    const resend = getResendClient();
+    if (!resend) {
       console.warn("[이메일] RESEND_API_KEY가 설정되지 않아 이메일 발송을 건너뜁니다.");
       return;
     }
