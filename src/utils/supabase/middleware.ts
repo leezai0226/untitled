@@ -30,7 +30,22 @@ export async function updateSession(request: NextRequest) {
   );
 
   // 세션 갱신 (중요: getUser를 호출해야 세션이 새로고침됨)
-  await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  // 로그인 필요 페이지 보호
+  const protectedPaths = ["/mypage", "/checkout", "/cart"];
+  const isProtected = protectedPaths.some((p) =>
+    request.nextUrl.pathname.startsWith(p)
+  );
+
+  if (isProtected && !user) {
+    const loginUrl = request.nextUrl.clone();
+    loginUrl.pathname = "/login";
+    loginUrl.searchParams.set("redirectTo", request.nextUrl.pathname);
+    return NextResponse.redirect(loginUrl);
+  }
 
   return supabaseResponse;
 }

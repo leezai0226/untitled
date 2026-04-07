@@ -310,6 +310,20 @@ function CheckoutForm() {
           await supabase.from("order_items").insert(orderItems);
           await supabase.from("cart_items").delete().eq("user_id", user.id);
 
+          // 관리자 이메일 알림
+          fetch("/api/notify", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              orderType: "shop",
+              customerName: form.name.trim(),
+              customerPhone: form.phone.trim(),
+              totalAmount,
+              paymentMethod: "bank_transfer",
+              items: cartItems.map((c) => c.product.title),
+            }),
+          }).catch(() => {});
+
           alert(
             "주문이 완료되었습니다! 입금 확인 후 마이페이지에서 다운로드하실 수 있습니다."
           );
@@ -336,6 +350,21 @@ function CheckoutForm() {
           const { error } = await supabase.from("orders").insert(classOrderData);
 
           if (error) throw new Error(`오류가 발생했습니다: ${error.message}`);
+
+          // 관리자 이메일 알림
+          fetch("/api/notify", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              orderType: "class",
+              customerName: form.name.trim(),
+              customerPhone: form.phone.trim(),
+              totalAmount: classPrice,
+              paymentMethod: "bank_transfer",
+              className,
+              schedule,
+            }),
+          }).catch(() => {});
 
           alert("수강신청이 완료되었습니다! 입금 확인 후 등록이 확정됩니다.");
           router.push("/");
