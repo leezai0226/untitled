@@ -119,6 +119,7 @@ export default function MyPage() {
 
   useEffect(() => {
     const fetchData = async () => {
+      // 로그인 확인
       const {
         data: { user },
       } = await supabase.auth.getUser();
@@ -127,26 +128,19 @@ export default function MyPage() {
         return;
       }
 
-      // 디지털 에셋 주문
-      const { data: shopData, error: shopError } = await supabase
-        .from("order_items")
-        .select(`
-          id,
-          price,
-          created_at,
-          downloaded_at,
-          product:products(id, title, category, thumbnail_url, file_url),
-          order:orders!inner(id, status, paid_at, created_at, order_type, payment_method)
-        `)
-        .eq("order.user_id", user.id)
-        .eq("order.order_type", "shop")
-        .in("order.status", ["completed", "refunded"])
-        .order("created_at", { ascending: false });
+      // Service Role API를 통해 데이터 조회 (RLS 우회 → downloaded_at 확실히 반환)
+      try {
+        const res = await fetch("/api/mypage");
+        if (!res.ok) {
+          console.error("마이페이지 데이터 조회 실패:", res.status);
+          setLoading(false);
+          return;
+        }
 
-      if (shopError) {
-        console.error("디지털 에셋 조회 실패:", shopError.message);
-      } else {
-        const normalized = (shopData ?? []).map((item: Record<string, unknown>) => ({
+        const data = await res.json();
+
+        // 디지털 에셋
+        const normalized = (data.shopItems ?? []).map((item: Record<string, unknown>) => ({
           id: item.id as string,
           price: item.price as number,
           created_at: item.created_at as string,
@@ -155,21 +149,11 @@ export default function MyPage() {
           order: item.order as OrderItem["order"],
         }));
         setItems(normalized);
-      }
 
-      // 클래스 주문
-      const { data: classData, error: classError } = await supabase
-        .from("orders")
-        .select("id, status, order_type, class_name, schedule, schedule_id, total_amount, payment_method, paid_at, created_at, name")
-        .eq("user_id", user.id)
-        .eq("order_type", "class")
-        .in("status", ["completed", "pending", "refunded"])
-        .order("created_at", { ascending: false });
-
-      if (classError) {
-        console.error("클래스 주문 조회 실패:", classError.message);
-      } else {
-        setClassOrders((classData as ClassOrder[]) ?? []);
+        // 클래스 주문
+        setClassOrders((data.classOrders as ClassOrder[]) ?? []);
+      } catch (err) {
+        console.error("마이페이지 데이터 조회 에러:", err);
       }
 
       setLoading(false);
