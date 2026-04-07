@@ -186,15 +186,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    /* ═══ DB 주문 처리 ═══ */
+    /* ═══ DB 주문 처리 (Service Role — RLS 우회) ═══ */
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !serviceRoleKey) {
+      return NextResponse.json(
+        { error: "서버 설정 오류" },
+        { status: 500 }
+      );
+    }
+
+    const adminClient = createServiceClient(supabaseUrl, serviceRoleKey);
+
     if (isShopOrder) {
       /* ── 샵 주문 처리 ── */
-      const { data: cartItems } = await supabase
+      const { data: cartItems } = await adminClient
         .from("cart_items")
         .select("id, product_id, product:products(price, remaining_seats)")
         .eq("user_id", user.id);
 
-      const { data: order, error: orderError } = await supabase
+      const { data: order, error: orderError } = await adminClient
         .from("orders")
         .insert({
           user_id: user.id,
@@ -228,28 +240,25 @@ export async function POST(request: NextRequest) {
           };
         });
 
-        await supabase.from("order_items").insert(orderItems);
+        const { error: itemsError } = await adminClient.from("order_items").insert(orderItems);
+        if (itemsError) {
+          console.error("[order_items insert 실패]", itemsError.message);
+        }
       }
 
-      await supabase.from("cart_items").delete().eq("user_id", user.id);
+      await adminClient.from("cart_items").delete().eq("user_id", user.id);
 
-      // 재고 차감 (Service Role)
+      // 재고 차감
       if (cartItems && cartItems.length > 0) {
-        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-        const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-        if (supabaseUrl && serviceRoleKey) {
-          const adminClient = createServiceClient(supabaseUrl, serviceRoleKey);
-          for (const item of cartItems) {
-            const product = item.product as unknown as {
-              remaining_seats: number | null;
-            } | null;
-            if (product && product.remaining_seats !== null) {
-              await adminClient.rpc("decrement_seats", {
-                p_product_id: item.product_id,
-                p_quantity: 1,
-              });
-            }
+        for (const item of cartItems) {
+          const product = item.product as unknown as {
+            remaining_seats: number | null;
+          } | null;
+          if (product && product.remaining_seats !== null) {
+            await adminClient.rpc("decrement_seats", {
+              p_product_id: item.product_id,
+              p_quantity: 1,
+            });
           }
         }
       }
@@ -259,39 +268,33 @@ export async function POST(request: NextRequest) {
 
       // 좌석 원자적 차감
       if (scheduleId) {
-        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-        const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+        const { data: seatResult, error: seatError } = await adminClient.rpc(
+          "decrement_schedule_seats",
+          { p_schedule_id: scheduleId, p_quantity: 1 }
+        );
 
-        if (supabaseUrl && serviceRoleKey) {
-          const adminClient = createServiceClient(supabaseUrl, serviceRoleKey);
-          const { data: seatResult, error: seatError } = await adminClient.rpc(
-            "decrement_schedule_seats",
-            { p_schedule_id: scheduleId, p_quantity: 1 }
+        if (seatError) {
+          console.error(
+            `[좌석 차감 실패] schedule_id=${scheduleId}: ${seatError.message}`
           );
+          return NextResponse.json(
+            {
+              error:
+                "좌석 차감에 실패했습니다. 관리자에게 문의해 주세요.",
+            },
+            { status: 500 }
+          );
+        }
 
-          if (seatError) {
-            console.error(
-              `[좌석 차감 실패] schedule_id=${scheduleId}: ${seatError.message}`
-            );
-            return NextResponse.json(
-              {
-                error:
-                  "좌석 차감에 실패했습니다. 관리자에게 문의해 주세요.",
-              },
-              { status: 500 }
-            );
-          }
-
-          if (seatResult === false) {
-            return NextResponse.json(
-              {
-                error:
-                  "죄송합니다. 다른 수강생이 먼저 결제하여 자리가 마감되었습니다.",
-                code: "RACE_CONDITION_SOLD_OUT",
-              },
-              { status: 409 }
-            );
-          }
+        if (seatResult === false) {
+          return NextResponse.json(
+            {
+              error:
+                "죄송합니다. 다른 수강생이 먼저 결제하여 자리가 마감되었습니다.",
+              code: "RACE_CONDITION_SOLD_OUT",
+            },
+            { status: 409 }
+          );
         }
       }
 
@@ -315,7 +318,7 @@ export async function POST(request: NextRequest) {
       if (scheduleId) orderData.schedule_id = scheduleId;
       if (metadata?.classId) orderData.class_id = metadata.classId;
 
-      const { error: orderError } = await supabase
+      const { error: orderError } = await adminClient
         .from("orders")
         .insert(orderData);
 

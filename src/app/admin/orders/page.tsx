@@ -1,25 +1,13 @@
 "use client";
 
-/*
- * ──────────────────────────────────────────────────────────
- * 관리자 전용 주문 관리 대시보드  (/admin/orders)
- *
- * [보안 참고]
- * 현재는 테스트를 위해 접속 제한이 없습니다.
- * 향후 이 /admin 경로는 관리자(Admin) 권한을 가진 사용자만
- * 접근할 수 있도록 미들웨어 또는 RLS 기반으로 제한할 예정입니다.
- * (Supabase user_metadata.role === 'admin' 확인)
- * ──────────────────────────────────────────────────────────
- */
-
 import { useEffect, useState, useCallback } from "react";
-import { createClient } from "@/utils/supabase/client";
 
 /* ─────────────── 타입 ─────────────── */
 
 interface Order {
   id: string;
   created_at: string;
+  order_type: string | null;
   class_name: string | null;
   schedule: string | null;
   name: string | null;
@@ -29,6 +17,7 @@ interface Order {
   cash_receipt_number: string | null;
   experience_level: string | null;
   message: string | null;
+  total_amount: number | null;
   status: string;
 }
 
@@ -44,32 +33,33 @@ function formatDate(iso: string) {
 }
 
 function paymentLabel(method: string | null) {
+  if (method === "portone") return "카드 결제";
   if (method === "card") return "카드 결제";
-  if (method === "bank_transfer") return "계좌 이체";
-  return "—";
+  if (method === "bank_transfer") return "계좌이체";
+  return method || "—";
 }
 
 function statusBadge(status: string) {
   if (status === "completed") {
     return (
-      <span className="inline-flex items-center gap-1 rounded-lg bg-green-500/15 px-3 py-1 text-sm font-semibold text-green-400">
+      <span className="inline-flex items-center gap-1 rounded-lg bg-green-500/15 px-3 py-1 text-xs font-semibold text-green-400 whitespace-nowrap">
         <span className="h-1.5 w-1.5 rounded-full bg-green-400" />
-        결제 완료
+        결제완료
       </span>
     );
   }
-  if (status === "cancelled") {
+  if (status === "cancelled" || status === "refunded") {
     return (
-      <span className="inline-flex items-center gap-1 rounded-lg bg-red-500/15 px-3 py-1 text-sm font-semibold text-red-400">
+      <span className="inline-flex items-center gap-1 rounded-lg bg-red-500/15 px-3 py-1 text-xs font-semibold text-red-400 whitespace-nowrap">
         <span className="h-1.5 w-1.5 rounded-full bg-red-400" />
-        취소됨
+        {status === "refunded" ? "환불" : "취소"}
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center gap-1 rounded-lg bg-yellow-500/15 px-3 py-1 text-sm font-semibold text-yellow-400">
+    <span className="inline-flex items-center gap-1 rounded-lg bg-yellow-500/15 px-3 py-1 text-xs font-semibold text-yellow-400 whitespace-nowrap">
       <span className="h-1.5 w-1.5 rounded-full bg-yellow-400" />
-      입금 대기
+      입금대기
     </span>
   );
 }
@@ -81,26 +71,34 @@ function experienceLabel(level: string | null) {
   return "—";
 }
 
+function formatAmount(amount: number | null) {
+  if (!amount) return "—";
+  return `₩${amount.toLocaleString("ko-KR")}`;
+}
+
 /* ─────────────── 페이지 ─────────────── */
 
 export default function AdminOrdersPage() {
-  const supabase = createClient();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [confirming, setConfirming] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"class" | "shop">("class");
 
-  /* ── 주문 목록 불러오기 ── */
+  /* ── 주문 목록 불러오기 (서버 API 경유) ── */
   const fetchOrders = useCallback(async () => {
-    const { data, error } = await supabase
-      .from("orders")
-      .select("*")
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      console.error("주문 조회 실패:", error.message);
-    } else {
-      setOrders((data as Order[]) ?? []);
+    try {
+      const res = await fetch("/api/admin/orders");
+      if (!res.ok) {
+        console.error("주문 조회 실패:", res.status);
+        setLoading(false);
+        return;
+      }
+      const data = await res.json();
+      setOrders((data.orders as Order[]) ?? []);
+    } catch (err) {
+      console.error("주문 조회 에러:", err);
     }
     setLoading(false);
   }, []);
@@ -109,7 +107,12 @@ export default function AdminOrdersPage() {
     fetchOrders();
   }, [fetchOrders]);
 
-  /* ── 입금 확인 (status → completed) — 서버 API 경유 ── */
+  /* ── 필터링 ── */
+  const classOrders = orders.filter((o) => o.order_type === "class");
+  const shopOrders = orders.filter((o) => o.order_type !== "class");
+  const filteredOrders = activeTab === "class" ? classOrders : shopOrders;
+
+  /* ── 입금 확인 ── */
   const handleConfirm = async (orderId: string) => {
     if (!window.confirm("이 주문을 입금 확인 처리하시겠습니까?")) return;
 
@@ -135,6 +138,30 @@ export default function AdminOrdersPage() {
       alert("서버 오류가 발생했습니다.");
     }
     setConfirming(null);
+  };
+
+  /* ── 주문 삭제(숨김) ── */
+  const handleDelete = async (orderId: string) => {
+    if (!window.confirm("이 주문을 목록에서 삭제(숨김)하시겠습니까?")) return;
+
+    setDeleting(orderId);
+    try {
+      const res = await fetch("/api/admin/orders", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: orderId }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        alert(data.error || "삭제 실패");
+      } else {
+        setOrders((prev) => prev.filter((o) => o.id !== orderId));
+      }
+    } catch {
+      alert("서버 오류가 발생했습니다.");
+    }
+    setDeleting(null);
   };
 
   /* ─────────────── UI ─────────────── */
@@ -168,73 +195,121 @@ export default function AdminOrdersPage() {
           </button>
         </div>
 
-        {orders.length === 0 ? (
+        {/* 탭 */}
+        <div className="mt-6 flex gap-2">
+          <button
+            onClick={() => setActiveTab("class")}
+            className={`flex-1 rounded-xl py-3 text-center text-sm font-semibold transition-all duration-200 ${
+              activeTab === "class"
+                ? "bg-primary text-background"
+                : "border border-border bg-card text-white hover:border-primary/50"
+            }`}
+          >
+            🎬 클래스 주문 ({classOrders.length})
+          </button>
+          <button
+            onClick={() => setActiveTab("shop")}
+            className={`flex-1 rounded-xl py-3 text-center text-sm font-semibold transition-all duration-200 ${
+              activeTab === "shop"
+                ? "bg-primary text-background"
+                : "border border-border bg-card text-white hover:border-primary/50"
+            }`}
+          >
+            🛒 Shop 주문 ({shopOrders.length})
+          </button>
+        </div>
+
+        {filteredOrders.length === 0 ? (
           <div className="mt-20 text-center text-sub-text">
-            아직 주문 내역이 없습니다.
+            {activeTab === "class" ? "클래스" : "Shop"} 주문 내역이 없습니다.
           </div>
         ) : (
           <>
-            {/* ── 데스크톱 테이블 (md 이상) ── */}
-            <div className="mt-8 hidden md:block overflow-x-auto rounded-xl border border-border">
+            {/* ── 데스크톱 테이블 ── */}
+            <div className="mt-6 hidden md:block overflow-x-auto rounded-xl border border-border">
               <table className="w-full text-left">
                 <thead>
                   <tr className="border-b border-border bg-card">
-                    <th className="px-5 py-4 text-sm font-semibold text-sub-text">주문일시</th>
-                    <th className="px-5 py-4 text-sm font-semibold text-sub-text">이름</th>
-                    <th className="px-5 py-4 text-sm font-semibold text-sub-text">연락처</th>
-                    <th className="px-5 py-4 text-sm font-semibold text-sub-text">클래스 / 일정</th>
-                    <th className="px-5 py-4 text-sm font-semibold text-sub-text">결제 수단</th>
-                    <th className="px-5 py-4 text-sm font-semibold text-sub-text">예금주</th>
-                    <th className="px-5 py-4 text-sm font-semibold text-sub-text">현금영수증</th>
-                    <th className="px-5 py-4 text-sm font-semibold text-sub-text">금액</th>
-                    <th className="px-5 py-4 text-sm font-semibold text-sub-text">상태</th>
-                    <th className="px-5 py-4 text-sm font-semibold text-sub-text">액션</th>
+                    <th className="px-4 py-3 text-xs font-semibold text-sub-text whitespace-nowrap">주문일시</th>
+                    <th className="px-4 py-3 text-xs font-semibold text-sub-text whitespace-nowrap">이름</th>
+                    <th className="px-4 py-3 text-xs font-semibold text-sub-text whitespace-nowrap">연락처</th>
+                    <th className="px-4 py-3 text-xs font-semibold text-sub-text whitespace-nowrap">
+                      {activeTab === "class" ? "클래스 / 일정" : "주문 유형"}
+                    </th>
+                    <th className="px-4 py-3 text-xs font-semibold text-sub-text whitespace-nowrap">결제수단</th>
+                    {activeTab === "class" && (
+                      <>
+                        <th className="px-4 py-3 text-xs font-semibold text-sub-text whitespace-nowrap">예금주</th>
+                        <th className="px-4 py-3 text-xs font-semibold text-sub-text whitespace-nowrap">현금영수증</th>
+                      </>
+                    )}
+                    <th className="px-4 py-3 text-xs font-semibold text-sub-text whitespace-nowrap">금액</th>
+                    <th className="px-4 py-3 text-xs font-semibold text-sub-text whitespace-nowrap">상태</th>
+                    <th className="px-4 py-3 text-xs font-semibold text-sub-text whitespace-nowrap">액션</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {orders.map((order) => (
+                  {filteredOrders.map((order) => (
                     <tr
                       key={order.id}
                       className="border-b border-border last:border-b-0 transition-colors hover:bg-card/50"
                     >
-                      <td className="px-5 py-4 text-sm text-white whitespace-nowrap">
+                      <td className="px-4 py-3 text-sm text-white whitespace-nowrap">
                         {formatDate(order.created_at)}
                       </td>
-                      <td className="px-5 py-4 text-sm font-medium text-white">
+                      <td className="px-4 py-3 text-sm font-medium text-white whitespace-nowrap">
                         {order.name || "—"}
                       </td>
-                      <td className="px-5 py-4 text-sm text-white whitespace-nowrap">
+                      <td className="px-4 py-3 text-sm text-white whitespace-nowrap">
                         {order.phone || "—"}
                       </td>
-                      <td className="px-5 py-4 text-sm text-white">
-                        <div>{order.class_name || "—"}</div>
-                        <div className="text-xs text-sub-text">{order.schedule || ""}</div>
+                      <td className="px-4 py-3 text-sm text-white whitespace-nowrap">
+                        {activeTab === "class" ? (
+                          <div>
+                            <div>{order.class_name || "—"}</div>
+                            <div className="text-xs text-sub-text">{order.schedule || ""}</div>
+                          </div>
+                        ) : (
+                          <span>디지털 에셋</span>
+                        )}
                       </td>
-                      <td className="px-5 py-4 text-sm text-white">
+                      <td className="px-4 py-3 text-sm text-white whitespace-nowrap">
                         {paymentLabel(order.payment_method)}
                       </td>
-                      <td className="px-5 py-4 text-sm text-white">
-                        {order.depositor_name || "—"}
+                      {activeTab === "class" && (
+                        <>
+                          <td className="px-4 py-3 text-sm text-white whitespace-nowrap">
+                            {order.depositor_name || "—"}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-white whitespace-nowrap">
+                            {order.cash_receipt_number || "—"}
+                          </td>
+                        </>
+                      )}
+                      <td className="px-4 py-3 font-display text-sm font-semibold text-primary whitespace-nowrap">
+                        {formatAmount(order.total_amount)}
                       </td>
-                      <td className="px-5 py-4 text-sm text-white">
-                        {order.cash_receipt_number || "—"}
-                      </td>
-                      <td className="px-5 py-4 font-display text-sm font-semibold text-primary whitespace-nowrap">
-                        299,000원
-                      </td>
-                      <td className="px-5 py-4">{statusBadge(order.status)}</td>
-                      <td className="px-5 py-4">
-                        {order.status === "pending" ? (
+                      <td className="px-4 py-3 whitespace-nowrap">{statusBadge(order.status)}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <div className="flex items-center gap-2">
+                          {order.status === "pending" && (
+                            <button
+                              onClick={() => handleConfirm(order.id)}
+                              disabled={confirming === order.id}
+                              className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-background transition-all duration-200 hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                            >
+                              {confirming === order.id ? "..." : "입금확인"}
+                            </button>
+                          )}
                           <button
-                            onClick={() => handleConfirm(order.id)}
-                            disabled={confirming === order.id}
-                            className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-background transition-all duration-200 hover:brightness-110 hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                            onClick={() => handleDelete(order.id)}
+                            disabled={deleting === order.id}
+                            className="rounded-lg border border-border px-2 py-1.5 text-xs text-sub-text transition-colors hover:border-red-500/50 hover:text-red-400 disabled:opacity-50"
+                            title="삭제(숨김)"
                           >
-                            {confirming === order.id ? "처리 중..." : "입금 확인"}
+                            {deleting === order.id ? "..." : "✕"}
                           </button>
-                        ) : (
-                          <span className="text-sm text-sub-text">—</span>
-                        )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -242,16 +317,25 @@ export default function AdminOrdersPage() {
               </table>
             </div>
 
-            {/* ── 모바일 카드 리스트 (md 미만) ── */}
-            <div className="mt-8 space-y-4 md:hidden">
-              {orders.map((order) => (
+            {/* ── 모바일 카드 리스트 ── */}
+            <div className="mt-6 space-y-4 md:hidden">
+              {filteredOrders.map((order) => (
                 <div
                   key={order.id}
-                  className="rounded-xl border border-border bg-card p-5"
+                  className="relative rounded-xl border border-border bg-card p-5"
                 >
+                  {/* 삭제 버튼 (우측 상단) */}
+                  <button
+                    onClick={() => handleDelete(order.id)}
+                    disabled={deleting === order.id}
+                    className="absolute right-3 top-3 rounded-lg border border-border px-2 py-1 text-xs text-sub-text transition-colors hover:border-red-500/50 hover:text-red-400 disabled:opacity-50"
+                  >
+                    {deleting === order.id ? "..." : "✕"}
+                  </button>
+
                   {/* 상단: 이름 + 상태 */}
-                  <div className="flex items-center justify-between">
-                    <span className="text-base font-semibold text-white">
+                  <div className="flex items-center gap-3 pr-8">
+                    <span className="text-base font-semibold text-white whitespace-nowrap">
                       {order.name || "—"}
                     </span>
                     {statusBadge(order.status)}
@@ -260,45 +344,56 @@ export default function AdminOrdersPage() {
                   {/* 기본 정보 */}
                   <div className="mt-4 space-y-2 text-sm">
                     <div className="flex justify-between">
-                      <span className="text-sub-text">주문일시</span>
-                      <span className="text-white">{formatDate(order.created_at)}</span>
+                      <span className="text-sub-text whitespace-nowrap">주문일시</span>
+                      <span className="text-white whitespace-nowrap">{formatDate(order.created_at)}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-sub-text">연락처</span>
-                      <span className="text-white">{order.phone || "—"}</span>
+                      <span className="text-sub-text whitespace-nowrap">연락처</span>
+                      <span className="text-white whitespace-nowrap">{order.phone || "—"}</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-sub-text">클래스</span>
-                      <span className="text-white text-right">{order.class_name || "—"}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-sub-text">일정</span>
-                      <span className="text-white text-right">{order.schedule || "—"}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-sub-text">결제 수단</span>
-                      <span className="text-white">{paymentLabel(order.payment_method)}</span>
-                    </div>
-                    {order.payment_method === "bank_transfer" && (
+                    {activeTab === "class" ? (
                       <>
                         <div className="flex justify-between">
-                          <span className="text-sub-text">예금주</span>
-                          <span className="text-white">{order.depositor_name || "—"}</span>
+                          <span className="text-sub-text whitespace-nowrap">클래스</span>
+                          <span className="text-white text-right">{order.class_name || "—"}</span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-sub-text">현금영수증</span>
-                          <span className="text-white">{order.cash_receipt_number || "—"}</span>
+                          <span className="text-sub-text whitespace-nowrap">일정</span>
+                          <span className="text-white text-right">{order.schedule || "—"}</span>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="flex justify-between">
+                        <span className="text-sub-text whitespace-nowrap">유형</span>
+                        <span className="text-white">디지털 에셋</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between">
+                      <span className="text-sub-text whitespace-nowrap">결제수단</span>
+                      <span className="text-white whitespace-nowrap">{paymentLabel(order.payment_method)}</span>
+                    </div>
+                    {activeTab === "class" && order.payment_method === "bank_transfer" && (
+                      <>
+                        <div className="flex justify-between">
+                          <span className="text-sub-text whitespace-nowrap">예금주</span>
+                          <span className="text-white whitespace-nowrap">{order.depositor_name || "—"}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-sub-text whitespace-nowrap">현금영수증</span>
+                          <span className="text-white whitespace-nowrap">{order.cash_receipt_number || "—"}</span>
                         </div>
                       </>
                     )}
                     <div className="flex justify-between">
-                      <span className="text-sub-text">금액</span>
-                      <span className="font-display font-semibold text-primary">299,000원</span>
+                      <span className="text-sub-text whitespace-nowrap">금액</span>
+                      <span className="font-display font-semibold text-primary whitespace-nowrap">
+                        {formatAmount(order.total_amount)}
+                      </span>
                     </div>
                   </div>
 
-                  {/* 상세 토글 */}
-                  {(order.experience_level || order.message) && (
+                  {/* 상세 토글 (클래스 전용) */}
+                  {activeTab === "class" && (order.experience_level || order.message) && (
                     <button
                       onClick={() => setExpandedId(expandedId === order.id ? null : order.id)}
                       className="mt-3 text-xs text-primary hover:underline"
