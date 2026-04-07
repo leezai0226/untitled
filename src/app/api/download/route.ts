@@ -154,11 +154,21 @@ export async function POST(request: NextRequest) {
    *     downloaded_at이 기록되면 환불 불가
    * ══════════════════════════════════════════════════════ */
   const orderItemId = validItem.id;
-  await adminClient
+  const downloadedAt = new Date().toISOString();
+
+  const { error: updateError } = await adminClient
     .from("order_items")
-    .update({ downloaded_at: new Date().toISOString() })
+    .update({ downloaded_at: downloadedAt })
     .eq("id", orderItemId)
     .is("downloaded_at", null);
 
-  return NextResponse.json({ signedUrl: signedData.signedUrl });
+  if (updateError) {
+    console.error("[다운로드 기록 실패]", updateError.message);
+    // 기록 실패해도 다운로드는 허용하되, 로그로 추적
+  }
+
+  return NextResponse.json({
+    signedUrl: signedData.signedUrl,
+    downloaded_at: downloadedAt,
+  });
 }

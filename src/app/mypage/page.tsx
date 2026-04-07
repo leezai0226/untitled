@@ -227,10 +227,12 @@ export default function MyPage() {
         a.click();
         document.body.removeChild(a);
 
+        // 서버에서 반환한 downloaded_at 사용 (DB에 기록된 값)
+        const serverDownloadedAt = data.downloaded_at || new Date().toISOString();
         setItems((prev) =>
           prev.map((i) =>
             i.id === item.id
-              ? { ...i, downloaded_at: new Date().toISOString() }
+              ? { ...i, downloaded_at: serverDownloadedAt }
               : i
           )
         );
