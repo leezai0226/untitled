@@ -4,8 +4,7 @@ import { createClient as createServiceClient } from "@supabase/supabase-js";
 
 /**
  * GET /api/mypage
- * Service Role로 order_items + orders를 조회하여
- * downloaded_at이 RLS에 의해 누락되지 않도록 보장합니다.
+ * Service Role로 조회하여 downloaded_at이 RLS에 의해 누락되지 않도록 보장
  */
 export async function GET() {
   try {
@@ -27,24 +26,49 @@ export async function GET() {
 
     const adminClient = createServiceClient(supabaseUrl, serviceRoleKey);
 
-    // 디지털 에셋 주문 (order_items + orders + products)
-    const { data: shopData, error: shopError } = await adminClient
-      .from("order_items")
-      .select(`
-        id,
-        price,
-        created_at,
-        downloaded_at,
-        product:products(id, title, category, thumbnail_url, file_url),
-        order:orders!inner(id, status, paid_at, created_at, order_type, payment_method, user_id)
-      `)
-      .eq("order.user_id", user.id)
-      .eq("order.order_type", "shop")
-      .in("order.status", ["completed", "refunded"])
+    // 1단계: 해당 유저의 shop 주문 ID 목록 가져오기
+    const { data: shopOrders, error: shopOrderError } = await adminClient
+      .from("orders")
+      .select("id, status, paid_at, created_at, order_type, payment_method")
+      .eq("user_id", user.id)
+      .eq("order_type", "shop")
+      .in("status", ["completed", "refunded"])
       .order("created_at", { ascending: false });
 
-    if (shopError) {
-      console.error("[마이페이지 API] 디지털 에셋 조회 실패:", shopError.message);
+    if (shopOrderError) {
+      console.error("[마이페이지 API] shop 주문 조회 실패:", shopOrderError.message);
+    }
+
+    let shopItems: Record<string, unknown>[] = [];
+
+    if (shopOrders && shopOrders.length > 0) {
+      const orderIds = shopOrders.map((o) => o.id);
+
+      // 2단계: 해당 주문들의 order_items 가져오기 (downloaded_at 포함)
+      const { data: itemsData, error: itemsError } = await adminClient
+        .from("order_items")
+        .select(`
+          id,
+          order_id,
+          price,
+          created_at,
+          downloaded_at,
+          product:products(id, title, category, thumbnail_url, file_url)
+        `)
+        .in("order_id", orderIds)
+        .order("created_at", { ascending: false });
+
+      if (itemsError) {
+        console.error("[마이페이지 API] order_items 조회 실패:", itemsError.message);
+      }
+
+      // 3단계: order 정보를 order_item에 매핑
+      const orderMap = new Map(shopOrders.map((o) => [o.id, o]));
+
+      shopItems = (itemsData ?? []).map((item) => ({
+        ...item,
+        order: orderMap.get(item.order_id as string) ?? null,
+      }));
     }
 
     // 클래스 주문
@@ -61,7 +85,7 @@ export async function GET() {
     }
 
     return NextResponse.json({
-      shopItems: shopData ?? [],
+      shopItems,
       classOrders: classData ?? [],
     });
   } catch (err) {

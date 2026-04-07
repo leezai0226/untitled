@@ -70,7 +70,7 @@ export async function sendPaymentNotification(data: PaymentNotification) {
     await resend.emails.send({
       from: FROM_EMAIL,
       to: ADMIN_EMAIL,
-      subject: `[동그란문] ${isClass ? "클래스 수강신청" : "디지털 에셋 주문"} — ${data.customerName} / ₩${data.totalAmount.toLocaleString("ko-KR")}`,
+      subject: `[untitled-studio] ${isClass ? "클래스 수강신청" : "디지털 에셋 주문"} — ${data.customerName} / ₩${data.totalAmount.toLocaleString("ko-KR")}`,
       html,
     });
 
