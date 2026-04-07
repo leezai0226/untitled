@@ -328,36 +328,28 @@ export async function POST(request: NextRequest) {
     }
 
     /* ═══ 관리자 이메일 알림 (비동기 — 실패해도 결제 성공) ═══ */
-    const emailData = {
+    const emailBase = {
       orderType: isShopOrder ? ("shop" as const) : ("class" as const),
       customerName: sanitize(metadata?.name as string) || "이름 없음",
       customerEmail: user.email || "",
       customerPhone: sanitize(metadata?.phone as string) || "",
       totalAmount: payment.amount as number,
       paymentMethod: "portone",
-      ...(isShopOrder
-        ? {
-            items: ((await supabase
-              .from("cart_items")
-              .select("product:products(title)")
-              .eq("user_id", user.id)
-              .then(r => r.data)) || []).map(
-              (i: Record<string, unknown>) =>
-                (i.product as { title: string } | null)?.title || "상품"
-            ),
-          }
-        : {
-            className: sanitize(metadata?.className as string) || "",
-            schedule: sanitize(metadata?.schedule as string) || "",
-          }),
     };
 
-    // 장바구니는 이미 삭제됐으므로 metadata에서 상품명 추출 시도
-    if (isShopOrder && (!emailData.items || emailData.items.length === 0)) {
-      emailData.items = [sanitize(metadata?.productName as string) || "디지털 에셋"];
+    if (isShopOrder) {
+      const productName = sanitize(metadata?.productName as string) || "디지털 에셋";
+      sendPaymentNotification({
+        ...emailBase,
+        items: [productName],
+      }).catch(() => {});
+    } else {
+      sendPaymentNotification({
+        ...emailBase,
+        className: sanitize(metadata?.className as string) || "",
+        schedule: sanitize(metadata?.schedule as string) || "",
+      }).catch(() => {});
     }
-
-    sendPaymentNotification(emailData).catch(() => {});
 
     return NextResponse.json({ success: true, payment });
   } catch (err: unknown) {
