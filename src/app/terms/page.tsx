@@ -131,7 +131,7 @@ export default function TermsPage() {
               제5조 (결제 및 취소)
             </h2>
             <p className="mt-4 text-base leading-relaxed text-sub-text">
-              결제는 토스페이먼츠를 통한 전자결제 대행 서비스를 이용합니다.
+              결제는 KG이니시스를 통한 전자결제 대행 서비스를 이용합니다.
             </p>
           </section>
         </div>

@@ -28,7 +28,7 @@ export default function PrivacyPage() {
                 "성명",
                 "이메일 주소",
                 "휴대전화 번호",
-                "결제 정보 (토스페이먼츠 연동)",
+                "결제 정보 (KG이니시스 연동)",
                 "접속 기록",
               ].map((item) => (
                 <li key={item} className="flex items-start gap-2">
@@ -88,7 +88,7 @@ export default function PrivacyPage() {
             </h2>
             <p className="mt-4 text-base text-sub-text">
               <span className="text-white font-medium">
-                (주)토스페이먼츠
+                KG이니시스
               </span>{" "}
               — 전자결제 처리
             </p>
