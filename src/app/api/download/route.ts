@@ -138,7 +138,9 @@ export async function POST(request: NextRequest) {
 
   const { data: signedData, error: signedError } = await adminClient.storage
     .from("shop-files")
-    .createSignedUrl(product.file_url, SIGNED_URL_EXPIRES);
+    .createSignedUrl(product.file_url, SIGNED_URL_EXPIRES, {
+      download: true,
+    });
 
   if (signedError || !signedData?.signedUrl) {
     return NextResponse.json(
@@ -146,6 +148,17 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+
+  /* ══════════════════════════════════════════════════════
+   * 5️⃣  다운로드 시각 기록 (최초 다운로드 시에만)
+   *     downloaded_at이 기록되면 환불 불가
+   * ══════════════════════════════════════════════════════ */
+  const orderItemId = validItem.id;
+  await adminClient
+    .from("order_items")
+    .update({ downloaded_at: new Date().toISOString() })
+    .eq("id", orderItemId)
+    .is("downloaded_at", null);
 
   return NextResponse.json({ signedUrl: signedData.signedUrl });
 }

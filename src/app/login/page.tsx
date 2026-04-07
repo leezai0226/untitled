@@ -69,8 +69,8 @@ export default function LoginPage() {
           {/* 안내 문구 */}
           <p className="mt-8 text-center text-xs text-sub-text leading-relaxed">
             로그인 시{" "}
-            <span className="underline cursor-pointer hover:text-primary">이용약관</span> 및{" "}
-            <span className="underline cursor-pointer hover:text-primary">개인정보처리방침</span>에
+            <Link href="/terms" className="underline hover:text-primary transition-colors">이용약관</Link> 및{" "}
+            <Link href="/privacy" className="underline hover:text-primary transition-colors">개인정보처리방침</Link>에
             동의하게 됩니다.
           </p>
 

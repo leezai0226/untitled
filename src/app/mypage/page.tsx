@@ -11,6 +11,7 @@ interface OrderItem {
   id: string;
   price: number;
   created_at: string;
+  downloaded_at: string | null;
   product: {
     id: string;
     title: string;
@@ -24,6 +25,7 @@ interface OrderItem {
     paid_at: string | null;
     created_at: string;
     order_type: string;
+    payment_method: string;
   };
 }
 
@@ -56,6 +58,7 @@ export default function MyPage() {
   const [items, setItems] = useState<OrderItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState<string | null>(null);
+  const [refunding, setRefunding] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchPurchases = async () => {
@@ -65,18 +68,18 @@ export default function MyPage() {
         return;
       }
 
-      // order_items와 관련 product, order 정보를 조인 조회
       const { data, error } = await supabase
         .from("order_items")
         .select(`
           id,
           price,
           created_at,
+          downloaded_at,
           product:products(id, title, category, thumbnail_url, file_url),
-          order:orders!inner(id, status, paid_at, created_at, order_type)
+          order:orders!inner(id, status, paid_at, created_at, order_type, payment_method)
         `)
         .eq("order.user_id", user.id)
-        .eq("order.status", "completed")
+        .in("order.status", ["completed", "refunded"])
         .order("created_at", { ascending: false });
 
       if (error) {
@@ -86,6 +89,7 @@ export default function MyPage() {
           id: item.id as string,
           price: item.price as number,
           created_at: item.created_at as string,
+          downloaded_at: (item.downloaded_at as string) || null,
           product: item.product as OrderItem["product"],
           order: item.order as OrderItem["order"],
         }));
@@ -96,11 +100,19 @@ export default function MyPage() {
     fetchPurchases();
   }, []);
 
-  /* ── 다운로드 (서버 API 경유 — 구매 검증 + Signed URL) ── */
+  /* ── 다운로드 (서버 API 경유 — 구매 검증 + Signed URL + 강제 다운로드) ── */
   const handleDownload = async (item: OrderItem) => {
     if (!item.product?.id) {
       alert("상품 정보가 올바르지 않습니다.");
       return;
+    }
+
+    // 다운로드 전 확인 (최초 다운로드 시)
+    if (!item.downloaded_at) {
+      const confirmed = window.confirm(
+        "다운로드를 시작하면 해당 상품은 환불이 불가합니다.\n계속하시겠습니까?"
+      );
+      if (!confirmed) return;
     }
 
     setDownloading(item.id);
@@ -112,6 +124,11 @@ export default function MyPage() {
         body: JSON.stringify({ productId: item.product.id }),
       });
 
+      const contentType = res.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        throw new Error(`서버 오류 (${res.status})`);
+      }
+
       const data = await res.json();
 
       if (!res.ok) {
@@ -121,7 +138,22 @@ export default function MyPage() {
       }
 
       if (data.signedUrl) {
-        window.open(data.signedUrl, "_blank");
+        // 강제 다운로드 (새 탭 대신 현재 창에서 다운로드)
+        const a = document.createElement("a");
+        a.href = data.signedUrl;
+        a.download = "";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+
+        // 다운로드 기록 반영 (UI 즉시 업데이트)
+        setItems((prev) =>
+          prev.map((i) =>
+            i.id === item.id
+              ? { ...i, downloaded_at: new Date().toISOString() }
+              : i
+          )
+        );
       } else {
         alert("다운로드 링크를 생성하지 못했습니다.");
       }
@@ -130,6 +162,54 @@ export default function MyPage() {
     }
 
     setDownloading(null);
+  };
+
+  /* ── 환불 요청 ── */
+  const handleRefund = async (item: OrderItem) => {
+    if (item.downloaded_at) {
+      alert("다운로드한 상품은 환불이 불가합니다.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `"${item.product.title}" 상품을 환불하시겠습니까?\n환불 후에는 다운로드가 불가합니다.`
+    );
+    if (!confirmed) return;
+
+    setRefunding(item.id);
+
+    try {
+      const res = await fetch("/api/refund", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderItemId: item.id }),
+      });
+
+      const contentType = res.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        throw new Error(`서버 오류 (${res.status})`);
+      }
+
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        alert(data.message);
+        // UI 업데이트: 주문 상태를 refunded로 변경
+        setItems((prev) =>
+          prev.map((i) =>
+            i.id === item.id
+              ? { ...i, order: { ...i.order, status: "refunded" } }
+              : i
+          )
+        );
+      } else {
+        alert(data.error || "환불 처리에 실패했습니다.");
+      }
+    } catch {
+      alert("서버 오류가 발생했습니다.");
+    }
+
+    setRefunding(null);
   };
 
   if (loading) {
@@ -167,14 +247,27 @@ export default function MyPage() {
         ) : (
           <div className="mt-8 space-y-4">
             {items.map((item, i) => {
+              const isRefunded = item.order.status === "refunded";
               const daysLeft = getDaysRemaining(item.order.paid_at, item.order.created_at);
               const expired = daysLeft <= 0;
               const expiryDate = getExpiryDate(item.order.paid_at, item.order.created_at);
               const purchaseDate = formatDate(item.order.paid_at || item.order.created_at);
+              const isDownloaded = !!item.downloaded_at;
+              const canRefund =
+                !isRefunded &&
+                !isDownloaded &&
+                !expired &&
+                item.order.order_type === "shop";
 
               return (
                 <FadeInSection key={item.id} delay={i * 0.05}>
-                  <div className="rounded-xl border border-border bg-card p-5">
+                  <div
+                    className={`rounded-xl border bg-card p-5 ${
+                      isRefunded
+                        ? "border-red-500/30 opacity-60"
+                        : "border-border"
+                    }`}
+                  >
                     <div className="flex gap-4">
                       {/* 썸네일 */}
                       <div className="relative h-20 w-28 shrink-0 overflow-hidden rounded-lg border border-border bg-background">
@@ -205,8 +298,16 @@ export default function MyPage() {
                           결제일: {purchaseDate}
                         </p>
 
-                        {/* 만료 정보 */}
-                        {expired ? (
+                        {/* 상태 표시 */}
+                        {isRefunded ? (
+                          <p className="mt-1 text-xs font-semibold text-red-400">
+                            환불 완료
+                          </p>
+                        ) : isDownloaded ? (
+                          <p className="mt-1 text-xs text-green-400">
+                            다운로드 완료 ({formatDate(item.downloaded_at!)})
+                          </p>
+                        ) : expired ? (
                           <p className="mt-1 text-xs text-red-400">
                             다운로드 만료 ({expiryDate})
                           </p>
@@ -221,25 +322,55 @@ export default function MyPage() {
                       </div>
                     </div>
 
-                    {/* 다운로드 버튼 */}
-                    <div className="mt-4">
-                      {expired ? (
-                        <button
-                          disabled
-                          className="w-full rounded-xl bg-border py-3 text-sm font-semibold text-sub-text cursor-not-allowed"
-                        >
-                          다운로드 만료
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => handleDownload(item)}
-                          disabled={downloading === item.id}
-                          className="w-full rounded-xl bg-primary py-3 text-sm font-semibold text-background transition-all duration-200 hover:brightness-110 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-primary/25 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          {downloading === item.id ? "준비 중..." : "다운로드"}
-                        </button>
-                      )}
-                    </div>
+                    {/* 버튼 영역 */}
+                    {!isRefunded && (
+                      <div className="mt-4 flex gap-3">
+                        {/* 다운로드 버튼 */}
+                        <div className="flex-1">
+                          {expired ? (
+                            <button
+                              disabled
+                              className="w-full rounded-xl bg-border py-3 text-sm font-semibold text-sub-text cursor-not-allowed"
+                            >
+                              다운로드 만료
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleDownload(item)}
+                              disabled={downloading === item.id}
+                              className="w-full rounded-xl bg-primary py-3 text-sm font-semibold text-background transition-all duration-200 hover:brightness-110 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-primary/25 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {downloading === item.id
+                                ? "준비 중..."
+                                : isDownloaded
+                                  ? "다시 다운로드"
+                                  : "다운로드"}
+                            </button>
+                          )}
+                        </div>
+
+                        {/* 환불 버튼 */}
+                        {item.order.order_type === "shop" && (
+                          <button
+                            onClick={() => handleRefund(item)}
+                            disabled={!canRefund || refunding === item.id}
+                            className={`shrink-0 rounded-xl border px-5 py-3 text-sm font-semibold transition-all duration-200 ${
+                              canRefund && refunding !== item.id
+                                ? "border-red-500/30 text-red-400 hover:bg-red-500/10 cursor-pointer"
+                                : "border-border text-sub-text/40 cursor-not-allowed"
+                            }`}
+                          >
+                            {refunding === item.id
+                              ? "처리 중..."
+                              : isDownloaded
+                                ? "환불 불가"
+                                : expired
+                                  ? "기한 만료"
+                                  : "환불"}
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </FadeInSection>
               );

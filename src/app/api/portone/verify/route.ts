@@ -23,7 +23,8 @@ async function getPortoneToken(): Promise<string> {
   const data = await res.json();
 
   if (data.code !== 0 || !data.response?.access_token) {
-    throw new Error(data.message || "포트원 토큰 발급 실패");
+    console.error("[포트원 토큰 발급 실패]", data.message);
+    throw new Error("결제 검증 서버 인증에 실패했습니다. 관리자에게 문의해 주세요.");
   }
 
   return data.response.access_token;
