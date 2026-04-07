@@ -26,7 +26,7 @@ export async function GET() {
 
     const adminClient = createServiceClient(supabaseUrl, serviceRoleKey);
 
-    // 1단계: 해당 유저의 shop 주문 ID 목록 가져오기
+    // 1단계: 해당 유저의 shop 주문 목록
     const { data: shopOrders, error: shopOrderError } = await adminClient
       .from("orders")
       .select("id, status, paid_at, created_at, order_type, payment_method")
@@ -36,15 +36,22 @@ export async function GET() {
       .order("created_at", { ascending: false });
 
     if (shopOrderError) {
-      console.error("[마이페이지 API] shop 주문 조회 실패:", shopOrderError.message);
+      console.error("[마이페이지] 1단계 shop 주문 조회 실패:", shopOrderError.message);
+      return NextResponse.json({
+        shopItems: [],
+        classOrders: [],
+        debug: { step: 1, error: shopOrderError.message, userId: user.id },
+      });
     }
+
+    console.log("[마이페이지] 1단계 shop 주문:", shopOrders?.length, "건, userId:", user.id);
 
     let shopItems: Record<string, unknown>[] = [];
 
     if (shopOrders && shopOrders.length > 0) {
       const orderIds = shopOrders.map((o) => o.id);
 
-      // 2단계: 해당 주문들의 order_items 가져오기 (downloaded_at 포함)
+      // 2단계: order_items 조회
       const { data: itemsData, error: itemsError } = await adminClient
         .from("order_items")
         .select(`
@@ -53,20 +60,54 @@ export async function GET() {
           price,
           created_at,
           downloaded_at,
-          product:products(id, title, category, thumbnail_url, file_url)
+          product_id
         `)
         .in("order_id", orderIds)
         .order("created_at", { ascending: false });
 
       if (itemsError) {
-        console.error("[마이페이지 API] order_items 조회 실패:", itemsError.message);
+        console.error("[마이페이지] 2단계 order_items 조회 실패:", itemsError.message);
+        return NextResponse.json({
+          shopItems: [],
+          classOrders: [],
+          debug: { step: 2, error: itemsError.message, orderIds },
+        });
       }
 
-      // 3단계: order 정보를 order_item에 매핑
+      console.log("[마이페이지] 2단계 order_items:", itemsData?.length, "건");
+
+      // 3단계: 상품 정보 조회 (별도 쿼리)
+      const productIds = [...new Set((itemsData ?? []).map((i) => i.product_id as string))];
+
+      let productMap = new Map<string, Record<string, unknown>>();
+
+      if (productIds.length > 0) {
+        const { data: productsData, error: productsError } = await adminClient
+          .from("products")
+          .select("id, title, category, thumbnail_url, file_url")
+          .in("id", productIds);
+
+        if (productsError) {
+          console.error("[마이페이지] 3단계 products 조회 실패:", productsError.message);
+        } else {
+          productMap = new Map(
+            (productsData ?? []).map((p) => [p.id as string, p])
+          );
+        }
+
+        console.log("[마이페이지] 3단계 products:", productsData?.length, "건");
+      }
+
+      // 4단계: 매핑
       const orderMap = new Map(shopOrders.map((o) => [o.id, o]));
 
       shopItems = (itemsData ?? []).map((item) => ({
-        ...item,
+        id: item.id,
+        order_id: item.order_id,
+        price: item.price,
+        created_at: item.created_at,
+        downloaded_at: item.downloaded_at,
+        product: productMap.get(item.product_id as string) ?? null,
         order: orderMap.get(item.order_id as string) ?? null,
       }));
     }
@@ -81,7 +122,7 @@ export async function GET() {
       .order("created_at", { ascending: false });
 
     if (classError) {
-      console.error("[마이페이지 API] 클래스 주문 조회 실패:", classError.message);
+      console.error("[마이페이지] 클래스 주문 조회 실패:", classError.message);
     }
 
     return NextResponse.json({

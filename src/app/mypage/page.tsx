@@ -138,6 +138,7 @@ export default function MyPage() {
         }
 
         const data = await res.json();
+        console.log("[마이페이지] API 응답:", JSON.stringify(data, null, 2));
 
         // 디지털 에셋
         const normalized = (data.shopItems ?? []).map((item: Record<string, unknown>) => ({
