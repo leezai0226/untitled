@@ -72,7 +72,7 @@ function CheckoutForm() {
 
   // 장바구니 상품 (샵 결제용)
   const [cartItems, setCartItems] = useState<CartProduct[]>([]);
-  const [classPrice, setClassPrice] = useState(299000);
+  const [classPrice, setClassPrice] = useState(279000);
   const totalAmount = fromCart
     ? cartItems.reduce((sum, item) => sum + (item.product?.price ?? 0), 0)
     : classPrice;
@@ -457,7 +457,7 @@ function CheckoutForm() {
                       399,000원
                     </span>
                     <span className="font-display text-2xl font-bold text-primary">
-                      299,000원
+                      279,000원
                     </span>
                   </div>
                 </div>

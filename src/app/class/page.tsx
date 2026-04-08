@@ -379,6 +379,21 @@ export default function ClassPage() {
         }
       }
 
+      // schedule_label("4/21 (화) 13:00 - 18:00")에서 월/일을 파싱하여 빠른 순으로 정렬
+      const parseLabelDate = (label: string): number => {
+        const match = label.match(/^(\d{1,2})\/(\d{1,2})/);
+        if (!match) return Number.MAX_SAFE_INTEGER;
+        const month = parseInt(match[1], 10);
+        const day = parseInt(match[2], 10);
+        return month * 100 + day;
+      };
+
+      const sortByDate = (a: Schedule, b: Schedule) =>
+        parseLabelDate(a.label) - parseLabelDate(b.label);
+
+      mapped.vlog.sort(sortByDate);
+      mapped.shortform.sort(sortByDate);
+
       setDbSchedules(mapped);
       setSchedulesLoaded(true);
     };
@@ -709,7 +724,7 @@ export default function ClassPage() {
                 399,000원
               </span>
               <span className="font-display text-xl font-bold text-primary">
-                299,000원
+                279,000원
               </span>
             </div>
           </div>

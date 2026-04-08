@@ -169,9 +169,9 @@ export async function POST(request: NextRequest) {
           .select("price")
           .eq("id", classId)
           .single();
-        expectedAmount = classRow?.price ?? 299000;
+        expectedAmount = classRow?.price ?? 279000;
       } else {
-        expectedAmount = 299000;
+        expectedAmount = 279000;
       }
     }
 
