@@ -1,8 +1,12 @@
 import type { Metadata } from "next";
 import { Montserrat } from "next/font/google";
+import { GoogleAnalytics } from "@next/third-parties/google";
 import "./globals.css";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
+
+const GA_ID = process.env.NEXT_PUBLIC_GA_ID;
+const isProduction = process.env.NODE_ENV === "production";
 
 const montserrat = Montserrat({
   variable: "--font-montserrat",
@@ -38,6 +42,7 @@ export default function RootLayout({
         <main>{children}</main>
         <Footer />
       </body>
+      {isProduction && GA_ID && <GoogleAnalytics gaId={GA_ID} />}
     </html>
   );
 }
