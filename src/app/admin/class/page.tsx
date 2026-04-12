@@ -12,8 +12,8 @@ interface ScheduleRow {
 }
 
 const CLASS_LABELS: Record<string, string> = {
-  vlog: "🎬 감성 브이로그 반",
-  shortform: "📱 생존 숏폼 마케팅 반",
+  beginner: "📗 초급반",
+  intermediate: "📘 중급반",
 };
 
 export default function AdminClassPage() {
@@ -73,8 +73,8 @@ export default function AdminClassPage() {
   };
 
   const grouped = {
-    vlog: schedules.filter((s) => s.class_type === "vlog"),
-    shortform: schedules.filter((s) => s.class_type === "shortform"),
+    beginner: schedules.filter((s) => s.class_type === "beginner"),
+    intermediate: schedules.filter((s) => s.class_type === "intermediate"),
   };
 
   if (loading) {
@@ -95,7 +95,7 @@ export default function AdminClassPage() {
           시간대별 잔여 좌석을 확인하고 수정하세요. 결제 시 자동 차감됩니다.
         </p>
 
-        {(["vlog", "shortform"] as const).map((type) => (
+        {(["beginner", "intermediate"] as const).map((type) => (
           <div key={type} className="mt-10">
             <h2 className="text-lg font-bold text-white">
               {CLASS_LABELS[type]}

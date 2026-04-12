@@ -123,10 +123,10 @@ function CheckoutForm() {
 
         if (orders && orders.length > 0) {
           setHasBeginnerDiscount(true);
-          setClassPrice(129000); // 149,000 - 20,000
+          setClassPrice(109000); // 129,000 - 20,000
         } else {
           setHasBeginnerDiscount(false);
-          setClassPrice(149000);
+          setClassPrice(129000);
         }
       }
 

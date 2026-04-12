@@ -186,7 +186,7 @@ const tabs: TabData[] = [
     icon: "📘",
     label: "중급반",
     originalPrice: 199000,
-    salePrice: 149000,
+    salePrice: 129000,
     duration: "2시간",
     maxStudents: 5,
     recommendations: [

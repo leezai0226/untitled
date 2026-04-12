@@ -183,12 +183,12 @@ export async function POST(request: NextRequest) {
             .limit(1);
 
           if (beginnerOrders && beginnerOrders.length > 0) {
-            expectedAmount = 129000; // 149,000 - 20,000 할인
+            expectedAmount = 109000; // 129,000 - 20,000 할인
           } else {
-            expectedAmount = 149000;
+            expectedAmount = 129000;
           }
         } else {
-          expectedAmount = 149000;
+          expectedAmount = 129000;
         }
       } else {
         // fallback
