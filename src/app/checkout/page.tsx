@@ -65,6 +65,8 @@ function CheckoutForm() {
   const schedule = searchParams.get("schedule") ?? "";
   const scheduleId = searchParams.get("schedule_id") ?? "";
   const classId = searchParams.get("class_id") ?? "";
+  const classType = searchParams.get("class_type") ?? "";
+  const priceFromUrl = searchParams.get("price");
 
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -72,7 +74,10 @@ function CheckoutForm() {
 
   // 장바구니 상품 (샵 결제용)
   const [cartItems, setCartItems] = useState<CartProduct[]>([]);
-  const [classPrice, setClassPrice] = useState(279000);
+  const [classPrice, setClassPrice] = useState(
+    priceFromUrl ? parseInt(priceFromUrl, 10) : 99000
+  );
+  const [hasBeginnerDiscount, setHasBeginnerDiscount] = useState(false);
   const totalAmount = fromCart
     ? cartItems.reduce((sum, item) => sum + (item.product?.price ?? 0), 0)
     : classPrice;
@@ -105,15 +110,23 @@ function CheckoutForm() {
         name: user.user_metadata?.full_name || user.user_metadata?.name || "",
       }));
 
-      // 클래스 결제인 경우 DB에서 실제 가격 로드
-      if (!fromCart && classId) {
-        const { data: classRow } = await supabase
-          .from("classes")
-          .select("price")
-          .eq("id", classId)
-          .single();
-        if (classRow) {
-          setClassPrice(classRow.price);
+      // 클래스 결제인 경우: URL의 price 파라미터를 사용하되, 중급반 할인 서버 검증
+      if (!fromCart && classType === "intermediate") {
+        const { data: orders } = await supabase
+          .from("orders")
+          .select("id")
+          .eq("user_id", user.id)
+          .eq("order_type", "class")
+          .eq("status", "completed")
+          .ilike("class_name", "%초급반%")
+          .limit(1);
+
+        if (orders && orders.length > 0) {
+          setHasBeginnerDiscount(true);
+          setClassPrice(129000); // 149,000 - 20,000
+        } else {
+          setHasBeginnerDiscount(false);
+          setClassPrice(149000);
         }
       }
 
@@ -205,6 +218,7 @@ function CheckoutForm() {
       metadata.schedule = schedule;
       metadata.experienceLevel = form.experienceLevel;
       metadata.message = form.message.trim() || null;
+      metadata.classType = classType;
       if (scheduleId) metadata.scheduleId = scheduleId;
       if (classId) metadata.classId = classId;
     }
@@ -453,14 +467,16 @@ function CheckoutForm() {
                 <div className="flex items-center justify-between">
                   <span className="text-base text-sub-text">결제 금액</span>
                   <div className="flex items-baseline gap-2">
-                    <span className="font-display text-sm text-sub-text line-through">
-                      399,000원
-                    </span>
                     <span className="font-display text-2xl font-bold text-primary">
-                      279,000원
+                      {totalAmount.toLocaleString("ko-KR")}원
                     </span>
                   </div>
                 </div>
+                {hasBeginnerDiscount && (
+                  <p className="mt-2 text-sm font-medium text-primary">
+                    🎉 초급반 수강생 2만 원 연계 할인 적용!
+                  </p>
+                )}
               </div>
             )}
           </div>

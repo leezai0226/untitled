@@ -161,17 +161,38 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // 클래스 가격 조회
-      const classId = metadata?.classId;
-      if (classId) {
-        const { data: classRow } = await supabase
-          .from("classes")
-          .select("price")
-          .eq("id", classId)
-          .single();
-        expectedAmount = classRow?.price ?? 279000;
+      // 클래스 타입별 가격 결정
+      const classTypeFromMeta = metadata?.classType as string | undefined;
+
+      if (classTypeFromMeta === "beginner") {
+        expectedAmount = 99000;
+      } else if (classTypeFromMeta === "intermediate") {
+        // 초급반 수강 이력 서버 사이드 확인 → 할인 적용 여부 결정
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+        const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+        if (supabaseUrl && serviceRoleKey) {
+          const svcClient = createServiceClient(supabaseUrl, serviceRoleKey);
+          const { data: beginnerOrders } = await svcClient
+            .from("orders")
+            .select("id")
+            .eq("user_id", user.id)
+            .eq("order_type", "class")
+            .eq("status", "completed")
+            .ilike("class_name", "%초급반%")
+            .limit(1);
+
+          if (beginnerOrders && beginnerOrders.length > 0) {
+            expectedAmount = 129000; // 149,000 - 20,000 할인
+          } else {
+            expectedAmount = 149000;
+          }
+        } else {
+          expectedAmount = 149000;
+        }
       } else {
-        expectedAmount = 279000;
+        // fallback
+        expectedAmount = 99000;
       }
     }
 
