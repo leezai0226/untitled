@@ -165,7 +165,7 @@ export async function POST(request: NextRequest) {
       const classTypeFromMeta = metadata?.classType as string | undefined;
 
       if (classTypeFromMeta === "beginner") {
-        expectedAmount = 99000;
+        expectedAmount = 89000;
       } else if (classTypeFromMeta === "intermediate") {
         // 초급반 수강 이력 서버 사이드 확인 → 할인 적용 여부 결정
         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -192,7 +192,7 @@ export async function POST(request: NextRequest) {
         }
       } else {
         // fallback
-        expectedAmount = 99000;
+        expectedAmount = 89000;
       }
     }
 

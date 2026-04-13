@@ -75,7 +75,7 @@ function CheckoutForm() {
   // 장바구니 상품 (샵 결제용)
   const [cartItems, setCartItems] = useState<CartProduct[]>([]);
   const [classPrice, setClassPrice] = useState(
-    priceFromUrl ? parseInt(priceFromUrl, 10) : 99000
+    priceFromUrl ? parseInt(priceFromUrl, 10) : 89000
   );
   const [hasBeginnerDiscount, setHasBeginnerDiscount] = useState(false);
   const totalAmount = fromCart

@@ -104,7 +104,7 @@ const tabs: TabData[] = [
     icon: "📗",
     label: "초급반",
     originalPrice: 129000,
-    salePrice: 99000,
+    salePrice: 89000,
     duration: "2시간",
     maxStudents: 5,
     recommendations: [
@@ -541,12 +541,17 @@ export default function ClassPage() {
               {isIntermediateDiscount && (
                 <div className="mt-3 inline-flex items-center gap-2 rounded-lg bg-primary/15 px-4 py-2">
                   <span className="text-sm font-bold text-primary sm:text-base">
-                    🎉 초급반 수강생 2만 원 연계 할인 적용!
+                    🎉 초급반 수강생 전용 2만 원 할인 적용 중!
                   </span>
                   <span className="font-display text-lg font-bold text-white sm:text-xl">
                     → {finalPrice.toLocaleString("ko-KR")}원
                   </span>
                 </div>
+              )}
+              {current.key === "intermediate" && !hasBeginnerOrder && (
+                <p className="mt-3 text-sm text-sub-text">
+                  📦 초급반과 함께 결제하면 <span className="font-semibold text-primary">198,000원</span>에 수강 가능합니다.
+                </p>
               )}
             </FadeInSection>
           </section>
