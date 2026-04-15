@@ -12,6 +12,7 @@ interface OrderItem {
   price: number;
   created_at: string;
   downloaded_at: string | null;
+  refunded_at: string | null;
   product: {
     id: string;
     title: string;
@@ -146,6 +147,7 @@ export default function MyPage() {
           price: item.price as number,
           created_at: item.created_at as string,
           downloaded_at: (item.downloaded_at as string) || null,
+          refunded_at: (item.refunded_at as string) || null,
           product: item.product as OrderItem["product"],
           order: item.order as OrderItem["order"],
         }));
@@ -238,10 +240,12 @@ export default function MyPage() {
       return;
     }
 
-    const confirmed = window.confirm(
-      `"${item.product.title}" 상품을 환불하시겠습니까?\n환불 후에는 다운로드가 불가합니다.`
-    );
-    if (!confirmed) return;
+    const isBank = item.order.payment_method === "bank_transfer";
+    const confirmMsg = isBank
+      ? `"${item.product.title}" 상품의 환불을 신청하시겠습니까?\n계좌이체 결제건은 관리자 확인 후 계좌로 환불 처리됩니다.`
+      : `"${item.product.title}" 상품을 환불하시겠습니까?\n환불 후에는 다운로드가 불가합니다.`;
+
+    if (!window.confirm(confirmMsg)) return;
 
     setRefunding(item.id);
 
@@ -261,12 +265,24 @@ export default function MyPage() {
 
       if (res.ok && data.success) {
         alert(data.message);
+        // 서버 응답의 status 값에 따라 로컬 상태 분기
+        const nextStatus: string = data.status || (isBank ? "refund_requested" : "refunded");
+
         setItems((prev) =>
-          prev.map((i) =>
-            i.id === item.id
-              ? { ...i, order: { ...i.order, status: "refunded" } }
-              : i
-          )
+          prev.map((i) => {
+            if (nextStatus === "refund_requested") {
+              // 계좌이체: 같은 주문 내 모든 아이템을 refund_requested 상태로 전환
+              if (i.order.id === item.order.id) {
+                return { ...i, order: { ...i.order, status: "refund_requested" } };
+              }
+              return i;
+            }
+            // 포트원: 해당 아이템만 refunded_at 채우고, 서버가 order.status 도 refunded 로 바꿨을 수 있음
+            if (i.id === item.id) {
+              return { ...i, refunded_at: new Date().toISOString() };
+            }
+            return i;
+          })
         );
       } else {
         alert(data.error || "환불 처리에 실패했습니다.");
@@ -289,10 +305,20 @@ export default function MyPage() {
     }
 
     const refundAmount = Math.floor(order.total_amount * (info.refundRate / 100));
-    const confirmMsg =
-      info.refundRate === 100
-        ? `"${order.class_name}" 수강을 취소하고 전액(₩${refundAmount.toLocaleString("ko-KR")}) 환불하시겠습니까?`
-        : `"${order.class_name}" 수강을 취소하시겠습니까?\n\n수강일 ${daysUntil}일 전이므로 50% 부분 환불(₩${refundAmount.toLocaleString("ko-KR")})이 적용됩니다.`;
+    const isBank = order.payment_method === "bank_transfer";
+
+    let confirmMsg: string;
+    if (isBank) {
+      confirmMsg =
+        info.refundRate === 100
+          ? `"${order.class_name}" 수강을 취소하고 전액(₩${refundAmount.toLocaleString("ko-KR")}) 환불 신청하시겠습니까?\n\n계좌이체 결제건은 관리자 확인 후 계좌로 환불 처리됩니다.`
+          : `"${order.class_name}" 수강을 취소하시겠습니까?\n\n수강일 ${daysUntil}일 전이므로 50% 부분 환불(₩${refundAmount.toLocaleString("ko-KR")})이 적용됩니다.\n계좌이체 결제건은 관리자 확인 후 계좌로 환불 처리됩니다.`;
+    } else {
+      confirmMsg =
+        info.refundRate === 100
+          ? `"${order.class_name}" 수강을 취소하고 전액(₩${refundAmount.toLocaleString("ko-KR")}) 환불하시겠습니까?`
+          : `"${order.class_name}" 수강을 취소하시겠습니까?\n\n수강일 ${daysUntil}일 전이므로 50% 부분 환불(₩${refundAmount.toLocaleString("ko-KR")})이 적용됩니다.`;
+    }
 
     if (!window.confirm(confirmMsg)) return;
 
@@ -314,9 +340,10 @@ export default function MyPage() {
 
       if (res.ok && data.success) {
         alert(data.message);
+        const nextStatus: string = data.status || (isBank ? "refund_requested" : "refunded");
         setClassOrders((prev) =>
           prev.map((o) =>
-            o.id === order.id ? { ...o, status: "refunded" } : o
+            o.id === order.id ? { ...o, status: nextStatus } : o
           )
         );
       } else {
@@ -404,13 +431,24 @@ export default function MyPage() {
             ) : (
               <div className="mt-6 space-y-4">
                 {items.map((item, i) => {
-                  const isRefunded = item.order.status === "refunded";
+                  // ★ 환불 판단: (1) 아이템 단위 refunded_at, (2) 주문 전체 refunded 상태
+                  const isRefunded =
+                    !!item.refunded_at || item.order.status === "refunded";
+                  const isRefundRequested =
+                    !isRefunded && item.order.status === "refund_requested";
+                  const isPending = item.order.status === "pending";
                   const daysLeft = getDaysRemaining(item.order.paid_at, item.order.created_at);
-                  const expired = daysLeft <= 0;
+                  const expired = !isPending && daysLeft <= 0;
                   const expiryDate = getExpiryDate(item.order.paid_at, item.order.created_at);
                   const purchaseDate = formatDate(item.order.paid_at || item.order.created_at);
                   const isDownloaded = !!item.downloaded_at;
-                  const canRefund = !isRefunded && !isDownloaded && !expired;
+                  const canRefund =
+                    !isRefunded &&
+                    !isRefundRequested &&
+                    !isPending &&
+                    !isDownloaded &&
+                    !expired;
+                  const isBank = item.order.payment_method === "bank_transfer";
 
                   return (
                     <FadeInSection key={item.id} delay={i * 0.05}>
@@ -418,7 +456,11 @@ export default function MyPage() {
                         className={`rounded-xl border bg-card p-5 ${
                           isRefunded
                             ? "border-red-500/30 opacity-60"
-                            : "border-border"
+                            : isRefundRequested
+                              ? "border-orange-400/40"
+                              : isPending
+                                ? "border-yellow-500/30"
+                                : "border-border"
                         }`}
                       >
                         <div className="flex gap-4">
@@ -428,7 +470,9 @@ export default function MyPage() {
                                 src={item.product.thumbnail_url}
                                 alt={item.product.title}
                                 fill
-                                className="object-cover"
+                                className={`object-cover ${
+                                  isRefunded ? "grayscale" : ""
+                                }`}
                                 sizes="112px"
                               />
                             ) : (
@@ -439,19 +483,49 @@ export default function MyPage() {
                           </div>
 
                           <div className="min-w-0 flex-1">
-                            <p className="text-xs font-display font-semibold uppercase tracking-wider text-primary">
-                              {item.product?.category}
-                            </p>
-                            <h3 className="mt-1 text-base font-semibold text-white">
+                            <div className="flex items-start justify-between gap-2">
+                              <p className="text-xs font-display font-semibold uppercase tracking-wider text-primary">
+                                {item.product?.category}
+                              </p>
+                              {/* 상태 뱃지 */}
+                              {isRefunded ? (
+                                <span className="shrink-0 rounded-md bg-red-500/15 px-2 py-0.5 text-[10px] font-semibold text-red-400">
+                                  환불 완료
+                                </span>
+                              ) : isRefundRequested ? (
+                                <span className="shrink-0 rounded-md bg-orange-400/15 px-2 py-0.5 text-[10px] font-semibold text-orange-400">
+                                  환불 신청 중
+                                </span>
+                              ) : isPending ? (
+                                <span className="shrink-0 rounded-md bg-yellow-500/15 px-2 py-0.5 text-[10px] font-semibold text-yellow-400">
+                                  입금 확인 중
+                                </span>
+                              ) : null}
+                            </div>
+                            <h3
+                              className={`mt-1 text-base font-semibold ${
+                                isRefunded
+                                  ? "text-sub-text line-through"
+                                  : "text-white"
+                              }`}
+                            >
                               {item.product?.title}
                             </h3>
                             <p className="mt-1 text-xs text-sub-text">
-                              결제일: {purchaseDate}
+                              {isPending ? "신청일" : "결제일"}: {purchaseDate}
                             </p>
 
                             {isRefunded ? (
                               <p className="mt-1 text-xs font-semibold text-red-400">
-                                환불 완료
+                                환불 완료 {item.refunded_at ? `(${formatDate(item.refunded_at)})` : ""}
+                              </p>
+                            ) : isRefundRequested ? (
+                              <p className="mt-1 text-xs font-semibold text-orange-400">
+                                관리자 확인 후 계좌로 환불됩니다
+                              </p>
+                            ) : isPending ? (
+                              <p className="mt-1 text-xs font-semibold text-yellow-400">
+                                입금 확인 후 다운로드가 활성화됩니다
                               </p>
                             ) : isDownloaded ? (
                               <p className="mt-1 text-xs text-green-400">
@@ -472,7 +546,25 @@ export default function MyPage() {
                           </div>
                         </div>
 
-                        {!isRefunded && (
+                        {/* 입금 대기 안내 */}
+                        {isPending && isBank && (
+                          <div className="mt-4 rounded-lg border border-yellow-500/20 bg-yellow-500/5 p-3">
+                            <p className="text-xs text-yellow-400">
+                              계좌이체 입금 확인 후 다운로드가 활성화됩니다. 문의: untitled.mooje@gmail.com
+                            </p>
+                          </div>
+                        )}
+
+                        {/* 환불 신청 중 안내 */}
+                        {isRefundRequested && (
+                          <div className="mt-4 rounded-lg border border-orange-400/20 bg-orange-400/5 p-3">
+                            <p className="text-xs text-orange-400">
+                              환불 신청이 접수되었습니다. 관리자가 확인 후 계좌로 환불 처리합니다.
+                            </p>
+                          </div>
+                        )}
+
+                        {!isRefunded && !isRefundRequested && !isPending && (
                           <div className="mt-4 flex gap-3">
                             <div className="flex-1">
                               {expired ? (
@@ -512,7 +604,9 @@ export default function MyPage() {
                                   ? "환불 불가"
                                   : expired
                                     ? "기한 만료"
-                                    : "환불"}
+                                    : isBank
+                                      ? "환불 신청"
+                                      : "환불"}
                             </button>
                           </div>
                         )}
@@ -544,11 +638,13 @@ export default function MyPage() {
               <div className="mt-6 space-y-4">
                 {classOrders.map((order, i) => {
                   const isRefunded = order.status === "refunded";
+                  const isRefundRequested = order.status === "refund_requested";
                   const isPending = order.status === "pending";
                   const daysUntil = getDaysUntilClass(order.schedule || "");
                   const refundInfo = getClassRefundInfo(daysUntil);
                   const isPast = daysUntil < 0;
                   const purchaseDate = formatDate(order.paid_at || order.created_at);
+                  const isBank = order.payment_method === "bank_transfer";
 
                   return (
                     <FadeInSection key={order.id} delay={i * 0.05}>
@@ -556,13 +652,21 @@ export default function MyPage() {
                         className={`rounded-xl border bg-card p-6 ${
                           isRefunded
                             ? "border-red-500/30 opacity-60"
-                            : "border-border"
+                            : isRefundRequested
+                              ? "border-orange-400/40"
+                              : isPending
+                                ? "border-yellow-500/30"
+                                : "border-border"
                         }`}
                       >
                         {/* 상단: 클래스명 + 상태 배지 */}
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0 flex-1">
-                            <h3 className="text-base font-semibold text-white">
+                            <h3
+                              className={`text-base font-semibold ${
+                                isRefunded ? "text-sub-text line-through" : "text-white"
+                              }`}
+                            >
                               {order.class_name || "원데이 클래스"}
                             </h3>
                             <p className="mt-1 text-sm text-primary font-medium">
@@ -573,20 +677,24 @@ export default function MyPage() {
                             className={`shrink-0 rounded-lg px-3 py-1 text-xs font-semibold ${
                               isRefunded
                                 ? "bg-red-500/15 text-red-400"
-                                : isPending
-                                  ? "bg-yellow-500/15 text-yellow-400"
-                                  : isPast
-                                    ? "bg-sub-text/15 text-sub-text"
-                                    : "bg-green-500/15 text-green-400"
+                                : isRefundRequested
+                                  ? "bg-orange-400/15 text-orange-400"
+                                  : isPending
+                                    ? "bg-yellow-500/15 text-yellow-400"
+                                    : isPast
+                                      ? "bg-sub-text/15 text-sub-text"
+                                      : "bg-green-500/15 text-green-400"
                             }`}
                           >
                             {isRefunded
                               ? "환불 완료"
-                              : isPending
-                                ? "입금 대기"
-                                : isPast
-                                  ? "수강 완료"
-                                  : "수강 예정"}
+                              : isRefundRequested
+                                ? "환불 신청 중"
+                                : isPending
+                                  ? "입금 확인 중"
+                                  : isPast
+                                    ? "수강 완료"
+                                    : "수강 예정"}
                           </span>
                         </div>
 
@@ -654,10 +762,19 @@ export default function MyPage() {
                         )}
 
                         {/* 입금 대기 안내 */}
-                        {isPending && (
+                        {isPending && isBank && (
                           <div className="mt-4 rounded-lg border border-yellow-500/20 bg-yellow-500/5 p-3">
                             <p className="text-xs text-yellow-400">
-                              입금 확인 후 수강이 확정됩니다. 문의: untitled.mooje@gmail.com
+                              계좌이체 입금 확인 후 수강이 확정됩니다. 문의: untitled.mooje@gmail.com
+                            </p>
+                          </div>
+                        )}
+
+                        {/* 환불 신청 중 안내 */}
+                        {isRefundRequested && (
+                          <div className="mt-4 rounded-lg border border-orange-400/20 bg-orange-400/5 p-3">
+                            <p className="text-xs text-orange-400">
+                              환불 신청이 접수되었습니다. 관리자가 확인 후 계좌로 환불 처리합니다.
                             </p>
                           </div>
                         )}

@@ -56,6 +56,14 @@ function statusBadge(status: string) {
       </span>
     );
   }
+  if (status === "refund_requested") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-lg bg-orange-400/15 px-3 py-1 text-xs font-semibold text-orange-400 whitespace-nowrap">
+        <span className="h-1.5 w-1.5 rounded-full bg-orange-400" />
+        환불 신청
+      </span>
+    );
+  }
   return (
     <span className="inline-flex items-center gap-1 rounded-lg bg-yellow-500/15 px-3 py-1 text-xs font-semibold text-yellow-400 whitespace-nowrap">
       <span className="h-1.5 w-1.5 rounded-full bg-yellow-400" />
@@ -82,6 +90,7 @@ export default function AdminOrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [confirming, setConfirming] = useState<string | null>(null);
+  const [approving, setApproving] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"class" | "shop">("class");
@@ -138,6 +147,40 @@ export default function AdminOrdersPage() {
       alert("서버 오류가 발생했습니다.");
     }
     setConfirming(null);
+  };
+
+  /* ── 환불 승인 (계좌이체 수동 처리) ── */
+  const handleApproveRefund = async (orderId: string) => {
+    if (
+      !window.confirm(
+        "이 주문의 환불을 승인 처리하시겠습니까?\n\n계좌로 송금을 완료한 후에 진행해 주세요. 주문 상태가 환불 완료로 변경됩니다."
+      )
+    ) {
+      return;
+    }
+
+    setApproving(orderId);
+    try {
+      const res = await fetch("/api/admin/orders", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: orderId, action: "approve_refund" }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        alert(data.error || "환불 승인 실패");
+      } else {
+        setOrders((prev) =>
+          prev.map((o) =>
+            o.id === orderId ? { ...o, status: "refunded" } : o
+          )
+        );
+      }
+    } catch {
+      alert("서버 오류가 발생했습니다.");
+    }
+    setApproving(null);
   };
 
   /* ── 주문 삭제(숨김) ── */
@@ -301,6 +344,16 @@ export default function AdminOrdersPage() {
                               {confirming === order.id ? "..." : "입금확인"}
                             </button>
                           )}
+                          {order.status === "refund_requested" &&
+                            order.payment_method === "bank_transfer" && (
+                              <button
+                                onClick={() => handleApproveRefund(order.id)}
+                                disabled={approving === order.id}
+                                className="rounded-lg bg-orange-400 px-3 py-1.5 text-xs font-semibold text-background transition-all duration-200 hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                              >
+                                {approving === order.id ? "..." : "환불 승인"}
+                              </button>
+                            )}
                           <button
                             onClick={() => handleDelete(order.id)}
                             disabled={deleting === order.id}
@@ -426,6 +479,18 @@ export default function AdminOrdersPage() {
                       {confirming === order.id ? "처리 중..." : "입금 확인"}
                     </button>
                   )}
+
+                  {/* 환불 승인 버튼 (계좌이체 환불 신청 건) */}
+                  {order.status === "refund_requested" &&
+                    order.payment_method === "bank_transfer" && (
+                      <button
+                        onClick={() => handleApproveRefund(order.id)}
+                        disabled={approving === order.id}
+                        className="mt-4 w-full rounded-xl bg-orange-400 py-3 text-base font-semibold text-background transition-all duration-200 hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {approving === order.id ? "처리 중..." : "환불 승인"}
+                      </button>
+                    )}
                 </div>
               ))}
             </div>

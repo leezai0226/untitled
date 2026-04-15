@@ -154,6 +154,13 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      if (order.status === "refund_requested") {
+        return NextResponse.json(
+          { error: "이미 환불 신청된 주문입니다. 관리자 확인을 기다려 주세요." },
+          { status: 400 }
+        );
+      }
+
       if (order.order_type !== "class") {
         return NextResponse.json(
           { error: "클래스 주문이 아닙니다." },
@@ -188,7 +195,38 @@ export async function POST(request: NextRequest) {
 
       const refundAmount = Math.floor(order.total_amount * (policy.refundRate / 100));
 
-      // 포트원 결제 취소
+      /* ───────────── 계좌이체(무통장): 관리자 수동 승인 플로우 ───────────── */
+      if (order.payment_method === "bank_transfer") {
+        // 포트원 취소 불가 → 상태를 refund_requested 로 전환, 관리자 확인 대기
+        const { error: reqError } = await adminClient
+          .from("orders")
+          .update({
+            status: "refund_requested",
+            refund_requested_at: new Date().toISOString(),
+          })
+          .eq("id", order.id);
+
+        if (reqError) {
+          console.error("[환불 신청 업데이트 실패]", reqError);
+          return NextResponse.json(
+            { error: `환불 신청 처리 실패: ${reqError.message}` },
+            { status: 500 }
+          );
+        }
+
+        return NextResponse.json({
+          success: true,
+          status: "refund_requested",
+          refundRate: policy.refundRate,
+          refundAmount,
+          message:
+            policy.refundRate === 100
+              ? `환불 신청이 접수되었습니다. 관리자 확인 후 전액(₩${refundAmount.toLocaleString("ko-KR")})이 계좌로 환불됩니다.`
+              : `환불 신청이 접수되었습니다. 관리자 확인 후 50% 부분 환불(₩${refundAmount.toLocaleString("ko-KR")})이 계좌로 환불됩니다.`,
+        });
+      }
+
+      /* ───────────── 카드(포트원): 즉시 환불 ───────────── */
       if (order.payment_method === "portone" && order.toss_payment_key) {
         const token = await getPortoneToken();
         const cancelRes = await fetch("https://api.iamport.kr/payments/cancel", {
@@ -215,14 +253,22 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // 주문 상태 업데이트
-      await adminClient
+      // 주문 상태 업데이트 (명시적 에러 체크)
+      const { error: classUpdateError } = await adminClient
         .from("orders")
         .update({
           status: "refunded",
           refunded_at: new Date().toISOString(),
         })
         .eq("id", order.id);
+
+      if (classUpdateError) {
+        console.error("[클래스 환불 상태 업데이트 실패]", classUpdateError);
+        return NextResponse.json(
+          { error: `환불 상태 업데이트 실패: ${classUpdateError.message}` },
+          { status: 500 }
+        );
+      }
 
       // 좌석 복구 (schedule_id가 있는 경우)
       if (order.schedule_id) {
@@ -259,12 +305,10 @@ export async function POST(request: NextRequest) {
 
       return NextResponse.json({
         success: true,
+        status: "refunded",
         refundRate: policy.refundRate,
         refundAmount,
-        message:
-          order.payment_method === "portone"
-            ? `${refundMsg} 카드사에 따라 2~5영업일 내 환불됩니다.`
-            : `${refundMsg} 관리자 확인 후 환불 처리됩니다.`,
+        message: `${refundMsg} 카드사에 따라 2~5영업일 내 환불됩니다.`,
       });
     }
 
@@ -276,6 +320,7 @@ export async function POST(request: NextRequest) {
       .select(`
         id,
         downloaded_at,
+        refunded_at,
         price,
         product_id,
         order_id,
@@ -325,6 +370,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (order.status === "refund_requested") {
+      return NextResponse.json(
+        { error: "이미 환불 신청된 주문입니다. 관리자 확인을 기다려 주세요." },
+        { status: 400 }
+      );
+    }
+
+    // 이미 해당 아이템이 환불 처리된 경우
+    const existingRefundedAt =
+      (orderItem as { refunded_at?: string | null }).refunded_at ?? null;
+    if (existingRefundedAt) {
+      return NextResponse.json(
+        { error: "이미 환불된 상품입니다." },
+        { status: 400 }
+      );
+    }
+
     if (orderItem.downloaded_at) {
       return NextResponse.json(
         { error: "다운로드한 상품은 환불이 불가합니다." },
@@ -332,7 +394,34 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 포트원 결제 자동 환불
+    /* ───────────── 계좌이체: 관리자 수동 승인 플로우 ───────────── */
+    if (order.payment_method === "bank_transfer") {
+      // 주문 전체를 refund_requested로 전환 (관리자가 확인 후 일괄 승인)
+      const { error: reqError } = await adminClient
+        .from("orders")
+        .update({
+          status: "refund_requested",
+          refund_requested_at: new Date().toISOString(),
+        })
+        .eq("id", order.id);
+
+      if (reqError) {
+        console.error("[환불 신청 업데이트 실패]", reqError);
+        return NextResponse.json(
+          { error: `환불 신청 처리 실패: ${reqError.message}` },
+          { status: 500 }
+        );
+      }
+
+      return NextResponse.json({
+        success: true,
+        status: "refund_requested",
+        message:
+          "환불 신청이 접수되었습니다. 관리자 확인 후 계좌로 환불 처리됩니다.",
+      });
+    }
+
+    /* ───────────── 카드(포트원): 즉시 환불 ───────────── */
     if (order.payment_method === "portone" && order.toss_payment_key) {
       const token = await getPortoneToken();
       const cancelRes = await fetch("https://api.iamport.kr/payments/cancel", {
@@ -359,14 +448,50 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 주문 상태 업데이트
-    await adminClient
-      .from("orders")
-      .update({
-        status: "refunded",
-        refunded_at: new Date().toISOString(),
-      })
-      .eq("id", order.id);
+    // 1) order_items.refunded_at 를 먼저 설정 (per-item 환불 추적)
+    const nowIso = new Date().toISOString();
+    const { error: itemUpdateError } = await adminClient
+      .from("order_items")
+      .update({ refunded_at: nowIso })
+      .eq("id", orderItem.id);
+
+    if (itemUpdateError) {
+      console.error("[아이템 환불 업데이트 실패]", itemUpdateError);
+      return NextResponse.json(
+        { error: `환불 상태 업데이트 실패: ${itemUpdateError.message}` },
+        { status: 500 }
+      );
+    }
+
+    // 2) 같은 주문 안의 다른 아이템들이 모두 환불됐는지 확인 → 모두면 orders.status 도 refunded
+    const { data: siblings, error: siblingsError } = await adminClient
+      .from("order_items")
+      .select("id, refunded_at")
+      .eq("order_id", order.id);
+
+    if (siblingsError) {
+      console.error("[형제 아이템 조회 실패]", siblingsError);
+    }
+
+    const allRefunded =
+      Array.isArray(siblings) &&
+      siblings.length > 0 &&
+      siblings.every((s) => !!(s as { refunded_at?: string | null }).refunded_at);
+
+    if (allRefunded) {
+      const { error: orderUpdateError } = await adminClient
+        .from("orders")
+        .update({
+          status: "refunded",
+          refunded_at: nowIso,
+        })
+        .eq("id", order.id);
+
+      if (orderUpdateError) {
+        console.error("[주문 환불 상태 업데이트 실패]", orderUpdateError);
+        // 아이템은 이미 환불 처리됐으므로 에러를 사용자에게 노출하지는 않음
+      }
+    }
 
     // 상품명 조회 (이메일용)
     let productName = "디지털 에셋";
@@ -393,10 +518,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message:
-        order.payment_method === "portone"
-          ? "환불이 완료되었습니다. 카드사에 따라 2~5영업일 내 환불됩니다."
-          : "환불 요청이 접수되었습니다. 관리자 확인 후 환불 처리됩니다.",
+      status: "refunded",
+      message: "환불이 완료되었습니다. 카드사에 따라 2~5영업일 내 환불됩니다.",
     });
   } catch (err: unknown) {
     console.error("POST /api/refund 에러:", err);

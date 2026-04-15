@@ -196,13 +196,6 @@ export default function ShopDetailClient({ productId }: { productId: string }) {
             ← 스토어로 돌아가기
           </Link>
 
-          {/* ── 상단 4:5 미디어 슬라이더 (slider_media가 있을 때만 렌더링) ── */}
-          {product.slider_media && product.slider_media.length > 0 && (
-            <div className="mt-8">
-              <MediaSlider items={product.slider_media} title={product.title} />
-            </div>
-          )}
-
           {/* 메인 레이아웃 */}
           <div className="mt-8 grid grid-cols-1 gap-10 lg:grid-cols-2 lg:items-start">
             {/* 좌측 — 썸네일 */}
@@ -313,6 +306,13 @@ export default function ShopDetailClient({ productId }: { productId: string }) {
               )}
             </div>
           </div>
+
+          {/* ── 4:5 미디어 슬라이더 (상세 정보 바로 위) ── */}
+          {product.slider_media && product.slider_media.length > 0 && (
+            <div className="mt-16">
+              <MediaSlider items={product.slider_media} title={product.title} />
+            </div>
+          )}
 
           {/* 상세 이미지 */}
           {product.detail_images && product.detail_images.length > 0 && (

@@ -27,12 +27,16 @@ export async function GET() {
     const adminClient = createServiceClient(supabaseUrl, serviceRoleKey);
 
     // 1단계: 해당 유저의 shop 주문 목록
+    //  - pending: 계좌이체 입금 대기 중 (사용자에게 보여줘야 함)
+    //  - completed: 결제 완료
+    //  - refunded: 환불 완료
+    //  - refund_requested: 환불 신청 중 (계좌이체)
     const { data: shopOrders, error: shopOrderError } = await adminClient
       .from("orders")
       .select("id, status, paid_at, created_at, order_type, payment_method")
       .eq("user_id", user.id)
       .eq("order_type", "shop")
-      .in("status", ["completed", "refunded"])
+      .in("status", ["pending", "completed", "refunded", "refund_requested"])
       .order("created_at", { ascending: false });
 
     if (shopOrderError) {
@@ -51,7 +55,7 @@ export async function GET() {
     if (shopOrders && shopOrders.length > 0) {
       const orderIds = shopOrders.map((o) => o.id);
 
-      // 2단계: order_items 조회
+      // 2단계: order_items 조회 (refunded_at 포함)
       const { data: itemsData, error: itemsError } = await adminClient
         .from("order_items")
         .select(`
@@ -60,6 +64,7 @@ export async function GET() {
           price,
           created_at,
           downloaded_at,
+          refunded_at,
           product_id
         `)
         .in("order_id", orderIds)
@@ -107,18 +112,19 @@ export async function GET() {
         price: item.price,
         created_at: item.created_at,
         downloaded_at: item.downloaded_at,
+        refunded_at: item.refunded_at,
         product: productMap.get(item.product_id as string) ?? null,
         order: orderMap.get(item.order_id as string) ?? null,
       }));
     }
 
-    // 클래스 주문
+    // 클래스 주문 (pending/refund_requested 모두 포함)
     const { data: classData, error: classError } = await adminClient
       .from("orders")
       .select("id, status, order_type, class_name, schedule, schedule_id, total_amount, payment_method, paid_at, created_at, name")
       .eq("user_id", user.id)
       .eq("order_type", "class")
-      .in("status", ["completed", "pending", "refunded"])
+      .in("status", ["completed", "pending", "refunded", "refund_requested"])
       .order("created_at", { ascending: false });
 
     if (classError) {
