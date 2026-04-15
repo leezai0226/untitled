@@ -31,6 +31,16 @@ export async function POST(request: NextRequest) {
       file_url: body.file_url || null,
       faqs: Array.isArray(body.faqs) ? body.faqs : [],
       refund_policy: Array.isArray(body.refund_policy) ? body.refund_policy : [],
+      slider_media: Array.isArray(body.slider_media)
+        ? body.slider_media.filter(
+            (m: unknown): m is { url: string; type: string } =>
+              !!m &&
+              typeof m === "object" &&
+              typeof (m as { url?: unknown }).url === "string" &&
+              ((m as { type?: unknown }).type === "image" ||
+                (m as { type?: unknown }).type === "video")
+          )
+        : [],
     };
 
     // remaining_seats: null = 무제한, 숫자 = 잔여 수량
@@ -91,6 +101,18 @@ export async function PUT(request: NextRequest) {
     if (fields.sort_order !== undefined) updateData.sort_order = Number(fields.sort_order);
     if (fields.faqs !== undefined) updateData.faqs = Array.isArray(fields.faqs) ? fields.faqs : [];
     if (fields.refund_policy !== undefined) updateData.refund_policy = Array.isArray(fields.refund_policy) ? fields.refund_policy : [];
+    if (fields.slider_media !== undefined) {
+      updateData.slider_media = Array.isArray(fields.slider_media)
+        ? fields.slider_media.filter(
+            (m: unknown): m is { url: string; type: string } =>
+              !!m &&
+              typeof m === "object" &&
+              typeof (m as { url?: unknown }).url === "string" &&
+              ((m as { type?: unknown }).type === "image" ||
+                (m as { type?: unknown }).type === "video")
+          )
+        : [];
+    }
     if (fields.remaining_seats !== undefined) {
       updateData.remaining_seats =
         fields.remaining_seats === null ? null : Number(fields.remaining_seats);

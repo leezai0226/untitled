@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { createRateLimiter } from "@/utils/rateLimit";
+import { sendRefundNotification } from "@/utils/email";
 
 const rateLimiter = createRateLimiter({ windowMs: 60_000, maxRequests: 5 });
 
@@ -128,7 +129,7 @@ export async function POST(request: NextRequest) {
     if (orderId) {
       const { data: order, error: orderError } = await adminClient
         .from("orders")
-        .select("id, user_id, status, order_type, payment_method, toss_payment_key, total_amount, schedule, schedule_id")
+        .select("id, user_id, status, order_type, payment_method, toss_payment_key, total_amount, schedule, schedule_id, name, phone, class_name")
         .eq("id", orderId)
         .single();
 
@@ -243,6 +244,19 @@ export async function POST(request: NextRequest) {
           ? `전액 환불(₩${refundAmount.toLocaleString("ko-KR")})이 완료되었습니다.`
           : `50% 부분 환불(₩${refundAmount.toLocaleString("ko-KR")})이 완료되었습니다.`;
 
+      // 관리자 환불 알림 이메일 (비동기 — 실패해도 환불 성공)
+      sendRefundNotification({
+        orderType: "class",
+        customerName: order.name || "이름 없음",
+        customerEmail: user.email || "",
+        customerPhone: order.phone || "",
+        refundAmount,
+        refundRate: policy.refundRate,
+        paymentMethod: order.payment_method || "",
+        className: order.class_name || "",
+        schedule: scheduleLabel,
+      }).catch(() => {});
+
       return NextResponse.json({
         success: true,
         refundRate: policy.refundRate,
@@ -263,6 +277,7 @@ export async function POST(request: NextRequest) {
         id,
         downloaded_at,
         price,
+        product_id,
         order_id,
         order:orders!inner(
           id,
@@ -270,7 +285,9 @@ export async function POST(request: NextRequest) {
           status,
           payment_method,
           toss_payment_key,
-          total_amount
+          total_amount,
+          name,
+          phone
         )
       `)
       .eq("id", orderItemId)
@@ -290,6 +307,8 @@ export async function POST(request: NextRequest) {
       payment_method: string;
       toss_payment_key: string | null;
       total_amount: number;
+      name: string | null;
+      phone: string | null;
     };
 
     if (order.user_id !== user.id) {
@@ -348,6 +367,29 @@ export async function POST(request: NextRequest) {
         refunded_at: new Date().toISOString(),
       })
       .eq("id", order.id);
+
+    // 상품명 조회 (이메일용)
+    let productName = "디지털 에셋";
+    if (orderItem.product_id) {
+      const { data: product } = await adminClient
+        .from("products")
+        .select("title")
+        .eq("id", orderItem.product_id)
+        .single();
+      if (product) productName = product.title;
+    }
+
+    // 관리자 환불 알림 이메일 (비동기)
+    sendRefundNotification({
+      orderType: "shop",
+      customerName: order.name || "이름 없음",
+      customerEmail: user.email || "",
+      customerPhone: order.phone || "",
+      refundAmount: orderItem.price,
+      refundRate: 100,
+      paymentMethod: order.payment_method || "",
+      productName,
+    }).catch(() => {});
 
     return NextResponse.json({
       success: true,

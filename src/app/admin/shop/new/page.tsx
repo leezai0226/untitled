@@ -47,6 +47,12 @@ export default function AdminShopNewPage() {
   const [thumbnailFile, setThumbnailFile] = useState<File | null>(null);
   const [thumbnailPreview, setThumbnailPreview] = useState<string | null>(null);
 
+  /* ── 슬라이더 미디어 (4:5 비율, 이미지+영상 혼합) ── */
+  const [sliderFiles, setSliderFiles] = useState<File[]>([]);
+  const [sliderPreviews, setSliderPreviews] = useState<
+    { url: string; type: "image" | "video" }[]
+  >([]);
+
   const [detailFiles, setDetailFiles] = useState<File[]>([]);
   const [detailPreviews, setDetailPreviews] = useState<string[]>([]);
 
@@ -55,6 +61,7 @@ export default function AdminShopNewPage() {
   const [submitting, setSubmitting] = useState(false);
 
   const thumbnailRef = useRef<HTMLInputElement>(null);
+  const sliderRef = useRef<HTMLInputElement>(null);
   const detailRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -80,6 +87,76 @@ export default function AdminShopNewPage() {
   const removeDetailImage = (index: number) => {
     setDetailFiles((prev) => prev.filter((_, i) => i !== index));
     setDetailPreviews((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  /* ── 슬라이더 미디어 다중 선택 (이미지 + 영상) ── */
+  const MAX_SLIDER_IMAGE_MB = 10;   // 이미지 10MB 제한
+  const MAX_SLIDER_VIDEO_MB = 100;  // 영상 100MB 제한
+
+  const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
+
+    const allowedImage = ["image/jpeg", "image/png", "image/webp", "image/jpg"];
+    const allowedVideo = ["video/mp4", "video/quicktime"]; // .mp4, .mov
+
+    const accepted: File[] = [];
+    const previews: { url: string; type: "image" | "video" }[] = [];
+
+    for (const f of files) {
+      const isImage = allowedImage.includes(f.type) || /\.(jpg|jpeg|png|webp)$/i.test(f.name);
+      const isVideo = allowedVideo.includes(f.type) || /\.(mp4|mov)$/i.test(f.name);
+
+      if (!isImage && !isVideo) {
+        alert(`지원하지 않는 파일 형식입니다: ${f.name}\n(jpg, png, webp, mp4, mov 만 가능)`);
+        continue;
+      }
+
+      const sizeMB = f.size / 1024 / 1024;
+      if (isImage && sizeMB > MAX_SLIDER_IMAGE_MB) {
+        alert(`이미지 파일은 ${MAX_SLIDER_IMAGE_MB}MB 이하여야 합니다: ${f.name}`);
+        continue;
+      }
+      if (isVideo && sizeMB > MAX_SLIDER_VIDEO_MB) {
+        alert(`영상 파일은 ${MAX_SLIDER_VIDEO_MB}MB 이하여야 합니다: ${f.name}`);
+        continue;
+      }
+
+      accepted.push(f);
+      previews.push({
+        url: URL.createObjectURL(f),
+        type: isVideo ? "video" : "image",
+      });
+    }
+
+    if (accepted.length === 0) return;
+
+    setSliderFiles((prev) => [...prev, ...accepted]);
+    setSliderPreviews((prev) => [...prev, ...previews]);
+    // input 재선택 허용
+    if (sliderRef.current) sliderRef.current.value = "";
+  };
+
+  const removeSliderMedia = (index: number) => {
+    setSliderFiles((prev) => prev.filter((_, i) => i !== index));
+    setSliderPreviews((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  /* 슬라이더 미디어 순서 변경 (위/아래 화살표) */
+  const moveSliderMedia = (from: number, to: number) => {
+    if (to < 0 || to >= sliderFiles.length) return;
+    setSliderFiles((prev) => {
+      const copy = [...prev];
+      const [item] = copy.splice(from, 1);
+      copy.splice(to, 0, item);
+      return copy;
+    });
+    setSliderPreviews((prev) => {
+      const copy = [...prev];
+      const [item] = copy.splice(from, 1);
+      copy.splice(to, 0, item);
+      return copy;
+    });
   };
 
   /* ── 유효성 ── */
@@ -138,6 +215,16 @@ export default function AdminShopNewPage() {
         detailUrls.push(url);
       }
 
+      // 2-1) 슬라이더 미디어 업로드 (이미지 + 영상)
+      const sliderMedia: { url: string; type: "image" | "video" }[] = [];
+      for (let i = 0; i < sliderFiles.length; i++) {
+        const f = sliderFiles[i];
+        const mediaType = sliderPreviews[i].type;
+        const sliderPath = `${folder}/slider-${i}-${safeFileName(f.name)}`;
+        const url = await uploadFile("shop-details", f, sliderPath);
+        sliderMedia.push({ url, type: mediaType });
+      }
+
       // 3) 판매 파일 업로드 (Private 버킷 → path만 저장)
       const filePath = `${folder}/${safeFileName(productFile.name)}`;
       const { error: fileError } = await supabase.storage
@@ -163,6 +250,7 @@ export default function AdminShopNewPage() {
           refund_policy: refundPolicy.filter((f) => f.q.trim() && f.a.trim()),
           thumbnail_url: thumbnailUrl,
           detail_images: detailUrls,
+          slider_media: sliderMedia,
           file_url: filePath,
         }),
       });
@@ -332,6 +420,106 @@ export default function AdminShopNewPage() {
               클릭하여 이미지 선택
             </button>
           )}
+        </div>
+
+        {/* ── 슬라이더 미디어 (4:5 비율, 사진+영상 혼합) ── */}
+        <div className="mt-6">
+          <label className="block text-sm font-medium text-sub-text mb-2">
+            상단 슬라이더 미디어{" "}
+            <span className="text-sub-text/60">
+              (선택 · 사진 + 영상 혼합 · 4:5 비율로 노출)
+            </span>
+          </label>
+          <input
+            ref={sliderRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,.jpg,.jpeg,.png,.webp,.mp4,.mov"
+            multiple
+            onChange={handleSliderChange}
+            className="hidden"
+          />
+
+          {sliderPreviews.length > 0 && (
+            <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {sliderPreviews.map((item, i) => (
+                <div
+                  key={i}
+                  className="relative overflow-hidden rounded-lg border border-border bg-background"
+                >
+                  <div className="relative aspect-[4/5] w-full">
+                    {item.type === "video" ? (
+                      <video
+                        src={item.url}
+                        muted
+                        playsInline
+                        preload="metadata"
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={item.url}
+                        alt={`슬라이더 ${i + 1}`}
+                        className="h-full w-full object-cover"
+                      />
+                    )}
+                    {/* 타입 뱃지 */}
+                    <span className="absolute left-1.5 top-1.5 rounded bg-background/80 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-white backdrop-blur-sm">
+                      {item.type === "video" ? "🎬 Video" : "🖼 Image"}
+                    </span>
+                    {/* 순서 뱃지 */}
+                    <span className="absolute right-1.5 top-1.5 rounded-full bg-primary/90 px-2 py-0.5 text-[10px] font-bold text-background">
+                      {i + 1}
+                    </span>
+                  </div>
+                  {/* 컨트롤 */}
+                  <div className="flex items-center justify-between gap-1 border-t border-border bg-card p-1.5">
+                    <div className="flex items-center gap-0.5">
+                      <button
+                        type="button"
+                        onClick={() => moveSliderMedia(i, i - 1)}
+                        disabled={i === 0}
+                        aria-label="앞으로"
+                        className="rounded p-1 text-sub-text transition-colors hover:text-primary disabled:opacity-30"
+                      >
+                        ◀
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => moveSliderMedia(i, i + 1)}
+                        disabled={i === sliderPreviews.length - 1}
+                        aria-label="뒤로"
+                        className="rounded p-1 text-sub-text transition-colors hover:text-primary disabled:opacity-30"
+                      >
+                        ▶
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeSliderMedia(i)}
+                      className="rounded px-1.5 py-0.5 text-[11px] text-sub-text transition-colors hover:text-red-400"
+                    >
+                      삭제
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={() => sliderRef.current?.click()}
+            className="w-full rounded-xl border-2 border-dashed border-border py-6 text-center text-sm text-sub-text transition-colors hover:border-primary/50 hover:text-primary"
+          >
+            + 슬라이더 미디어 추가 (.jpg, .png, .webp, .mp4, .mov)
+          </button>
+          <p className="mt-1.5 text-xs text-sub-text/60">
+            업로드한 순서대로 슬라이더에 노출되며, 화살표 버튼으로 순서를 조정할 수 있습니다.
+            <br />
+            이미지 최대 {MAX_SLIDER_IMAGE_MB}MB / 영상 최대 {MAX_SLIDER_VIDEO_MB}MB.
+            미디어를 추가하지 않으면 상세 페이지에서 슬라이더 영역이 표시되지 않습니다.
+          </p>
         </div>
 
         {/* ── 상세페이지 이미지 (다중) ── */}

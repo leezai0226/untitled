@@ -80,3 +80,75 @@ export async function sendPaymentNotification(data: PaymentNotification) {
     console.error("[이메일 발송 실패]", err);
   }
 }
+
+/* ───────────────────────────── 환불 알림 ───────────────────────────── */
+
+interface RefundNotification {
+  orderType: "shop" | "class";
+  customerName: string;
+  customerEmail: string;
+  customerPhone: string;
+  refundAmount: number;
+  refundRate: number;         // 50 또는 100
+  paymentMethod: string;
+  className?: string;         // 클래스
+  schedule?: string;          // 클래스
+  productName?: string;       // 샵
+}
+
+/**
+ * 관리자에게 환불 완료 알림 이메일을 발송합니다.
+ */
+export async function sendRefundNotification(data: RefundNotification) {
+  try {
+    const resend = getResendClient();
+    if (!resend) {
+      console.warn("[이메일] RESEND_API_KEY가 설정되지 않아 이메일 발송을 건너뜁니다.");
+      return;
+    }
+
+    const isClass = data.orderType === "class";
+    const paymentLabel =
+      data.paymentMethod === "portone"
+        ? "신용카드 (KG이니시스)"
+        : data.paymentMethod === "bank_transfer"
+          ? "계좌이체"
+          : data.paymentMethod;
+
+    const refundLabel = data.refundRate === 100 ? "전액 환불" : `${data.refundRate}% 부분 환불`;
+
+    const detailHtml = isClass
+      ? `<tr><td style="padding:8px 12px;border:1px solid #333;color:#ccc;">클래스</td><td style="padding:8px 12px;border:1px solid #333;color:#fff;">${data.className || "-"}</td></tr>
+         <tr><td style="padding:8px 12px;border:1px solid #333;color:#ccc;">일정</td><td style="padding:8px 12px;border:1px solid #333;color:#fff;">${data.schedule || "-"}</td></tr>`
+      : `<tr><td style="padding:8px 12px;border:1px solid #333;color:#ccc;">상품</td><td style="padding:8px 12px;border:1px solid #333;color:#fff;">${data.productName || "디지털 에셋"}</td></tr>`;
+
+    const html = `
+      <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:500px;margin:0 auto;background:#1a1a1a;border-radius:12px;padding:32px;color:#fff;">
+        <h2 style="margin:0 0 24px;color:#ff6b6b;">
+          ${isClass ? "🎬 클래스 환불 완료" : "🛒 디지털 에셋 환불 완료"}
+        </h2>
+        <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
+          <tr><td style="padding:8px 12px;border:1px solid #333;color:#ccc;">주문자</td><td style="padding:8px 12px;border:1px solid #333;color:#fff;">${data.customerName}</td></tr>
+          <tr><td style="padding:8px 12px;border:1px solid #333;color:#ccc;">이메일</td><td style="padding:8px 12px;border:1px solid #333;color:#fff;">${data.customerEmail}</td></tr>
+          <tr><td style="padding:8px 12px;border:1px solid #333;color:#ccc;">연락처</td><td style="padding:8px 12px;border:1px solid #333;color:#fff;">${data.customerPhone}</td></tr>
+          ${detailHtml}
+          <tr><td style="padding:8px 12px;border:1px solid #333;color:#ccc;">환불 유형</td><td style="padding:8px 12px;border:1px solid #333;color:#ff6b6b;font-weight:bold;">${refundLabel}</td></tr>
+          <tr><td style="padding:8px 12px;border:1px solid #333;color:#ccc;">환불 금액</td><td style="padding:8px 12px;border:1px solid #333;color:#ff6b6b;font-weight:bold;">₩${data.refundAmount.toLocaleString("ko-KR")}</td></tr>
+          <tr><td style="padding:8px 12px;border:1px solid #333;color:#ccc;">결제 수단</td><td style="padding:8px 12px;border:1px solid #333;color:#fff;">${paymentLabel}</td></tr>
+        </table>
+        <p style="color:#888;font-size:12px;margin:0;">이 메일은 자동 발송된 알림입니다.</p>
+      </div>
+    `;
+
+    await resend.emails.send({
+      from: FROM_EMAIL,
+      to: ADMIN_EMAIL,
+      subject: `[untitled-studio] 환불 완료 — ${data.customerName} / ₩${data.refundAmount.toLocaleString("ko-KR")}`,
+      html,
+    });
+
+    console.log("[이메일] 관리자 환불 알림 발송 완료");
+  } catch (err) {
+    console.error("[이메일 환불 알림 발송 실패]", err);
+  }
+}

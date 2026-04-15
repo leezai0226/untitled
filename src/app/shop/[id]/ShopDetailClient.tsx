@@ -6,6 +6,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import FadeInSection from "@/components/FadeInSection";
+import MediaSlider, { SliderMediaItem } from "@/components/MediaSlider";
 import { createClient } from "@/utils/supabase/client";
 
 /* ── 타입 ── */
@@ -26,6 +27,7 @@ interface Product {
   remaining_seats: number | null;
   faqs: FaqItem[] | null;
   refund_policy: FaqItem[] | null;
+  slider_media: SliderMediaItem[] | null;
 }
 
 function formatPrice(n: number) {
@@ -45,7 +47,7 @@ export default function ShopDetailClient({ productId }: { productId: string }) {
     const fetchProduct = async () => {
       const { data, error } = await supabase
         .from("products")
-        .select("id, title, price, category, description, thumbnail_url, detail_images, file_url, remaining_seats, faqs, refund_policy")
+        .select("id, title, price, category, description, thumbnail_url, detail_images, file_url, remaining_seats, faqs, refund_policy, slider_media")
         .eq("id", productId)
         .single();
 
@@ -193,6 +195,13 @@ export default function ShopDetailClient({ productId }: { productId: string }) {
           >
             ← 스토어로 돌아가기
           </Link>
+
+          {/* ── 상단 4:5 미디어 슬라이더 (slider_media가 있을 때만 렌더링) ── */}
+          {product.slider_media && product.slider_media.length > 0 && (
+            <div className="mt-8">
+              <MediaSlider items={product.slider_media} title={product.title} />
+            </div>
+          )}
 
           {/* 메인 레이아웃 */}
           <div className="mt-8 grid grid-cols-1 gap-10 lg:grid-cols-2 lg:items-start">

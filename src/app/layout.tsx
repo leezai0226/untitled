@@ -15,7 +15,7 @@ const montserrat = Montserrat({
 });
 
 export const metadata: Metadata = {
-  title: "프리미어 프로 원데이 클래스",
+  title: "UNTITLED-STUDIO",
   description:
     "초보자를 위한 프리미어 프로 영상 편집 원데이 클래스 & 디지털 에셋 스토어",
 };
