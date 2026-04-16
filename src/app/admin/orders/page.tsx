@@ -19,6 +19,22 @@ interface Order {
   message: string | null;
   total_amount: number | null;
   status: string;
+  // 비회원 주문 식별용
+  user_id: string | null;
+  guest_email: string | null;
+  guest_phone: string | null;
+}
+
+/** 비회원 주문 표시용 작은 배지 */
+function GuestBadge({ email }: { email: string | null }) {
+  return (
+    <span
+      className="ml-2 inline-flex items-center gap-1 rounded-md bg-yellow-500/15 px-2 py-0.5 text-[10px] font-semibold text-yellow-400 align-middle"
+      title={email || "비회원 주문"}
+    >
+      비회원
+    </span>
+  );
 }
 
 /* ─────────────── 헬퍼 ─────────────── */
@@ -93,7 +109,9 @@ export default function AdminOrdersPage() {
   const [approving, setApproving] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"class" | "shop">("class");
+  // 가장 최근 주문이 있는 탭이 자동으로 활성화됨 (orders 로드 후 1회만)
+  const [activeTab, setActiveTab] = useState<"class" | "shop">("shop");
+  const [tabAutoSelected, setTabAutoSelected] = useState(false);
 
   /* ── 주문 목록 불러오기 (서버 API 경유) ── */
   const fetchOrders = useCallback(async () => {
@@ -120,6 +138,19 @@ export default function AdminOrdersPage() {
   const classOrders = orders.filter((o) => o.order_type === "class");
   const shopOrders = orders.filter((o) => o.order_type !== "class");
   const filteredOrders = activeTab === "class" ? classOrders : shopOrders;
+
+  /* ── 첫 로드 시 가장 최근 주문이 있는 탭으로 자동 전환 ── */
+  useEffect(() => {
+    if (tabAutoSelected || orders.length === 0) return;
+    const latestClass = classOrders[0]?.created_at;
+    const latestShop = shopOrders[0]?.created_at;
+    if (latestClass && (!latestShop || latestClass > latestShop)) {
+      setActiveTab("class");
+    } else {
+      setActiveTab("shop");
+    }
+    setTabAutoSelected(true);
+  }, [orders, classOrders, shopOrders, tabAutoSelected]);
 
   /* ── 입금 확인 ── */
   const handleConfirm = async (orderId: string) => {
@@ -301,7 +332,13 @@ export default function AdminOrdersPage() {
                         {formatDate(order.created_at)}
                       </td>
                       <td className="px-4 py-3 text-sm font-medium text-white whitespace-nowrap">
-                        {order.name || "—"}
+                        <span>{order.name || "—"}</span>
+                        {!order.user_id && <GuestBadge email={order.guest_email} />}
+                        {!order.user_id && order.guest_email && (
+                          <div className="mt-0.5 text-[11px] font-normal text-sub-text">
+                            {order.guest_email}
+                          </div>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-sm text-white whitespace-nowrap">
                         {order.phone || "—"}
@@ -391,8 +428,14 @@ export default function AdminOrdersPage() {
                     <span className="text-base font-semibold text-white whitespace-nowrap">
                       {order.name || "—"}
                     </span>
+                    {!order.user_id && <GuestBadge email={order.guest_email} />}
                     {statusBadge(order.status)}
                   </div>
+                  {!order.user_id && order.guest_email && (
+                    <div className="mt-1 text-xs text-sub-text">
+                      ✉ {order.guest_email}
+                    </div>
+                  )}
 
                   {/* 기본 정보 */}
                   <div className="mt-4 space-y-2 text-sm">
