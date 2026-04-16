@@ -99,20 +99,28 @@ export default function ShopDetailClient({ productId }: { productId: string }) {
     }
   };
 
-  /* ── 바로 구매 (유료) ── */
+  /* ── 바로 구매 (유료) ──
+   *   · 회원:  장바구니에 담고 /checkout?from=cart 로 이동
+   *   · 비회원: /checkout?from=guest_shop&product_id=... 로 직행 (이메일 입력 폼 제공)
+   */
   const handleBuyNow = async () => {
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      alert("로그인이 필요합니다.");
-      router.push("/login");
+
+    if (user) {
+      await supabase.from("cart_items").upsert(
+        { user_id: user.id, product_id: product.id },
+        { onConflict: "user_id,product_id" }
+      );
+      router.push("/checkout?from=cart");
       return;
     }
-    // 장바구니에 담고 바로 결제 페이지로 이동
-    await supabase.from("cart_items").upsert(
-      { user_id: user.id, product_id: product.id },
-      { onConflict: "user_id,product_id" }
-    );
-    router.push("/checkout?from=cart");
+
+    // 비회원 바로 구매
+    const params = new URLSearchParams({
+      from: "guest_shop",
+      product_id: product.id,
+    });
+    router.push(`/checkout?${params.toString()}`);
   };
 
   /* ── 무료 상품 즉시 받기 ── */

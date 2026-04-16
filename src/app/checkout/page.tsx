@@ -33,6 +33,7 @@ declare global {
 interface FormData {
   name: string;
   phone: string;
+  guestEmail: string;           // 비회원 전용
   experienceLevel: string;
   message: string;
   paymentMethod: "card" | "bank_transfer" | "";
@@ -52,6 +53,14 @@ interface CartProduct {
   };
 }
 
+interface GuestProduct {
+  id: string;
+  title: string;
+  price: number;
+  category: string;
+  thumbnail_url: string | null;
+}
+
 /* ─────────────── 내부 폼 컴포넌트 ─────────────── */
 
 function CheckoutForm() {
@@ -60,7 +69,10 @@ function CheckoutForm() {
   const supabase = createClient();
 
   // 주문 유형 결정
-  const fromCart = searchParams.get("from") === "cart";
+  const fromParam = searchParams.get("from");
+  const fromCart = fromParam === "cart";
+  const fromGuestShop = fromParam === "guest_shop";
+  const guestProductId = searchParams.get("product_id") ?? "";
   const className = searchParams.get("class") ?? "";
   const schedule = searchParams.get("schedule") ?? "";
   const scheduleId = searchParams.get("schedule_id") ?? "";
@@ -68,23 +80,30 @@ function CheckoutForm() {
   const classType = searchParams.get("class_type") ?? "";
   const priceFromUrl = searchParams.get("price");
 
+  const isShopOrder = fromCart || fromGuestShop;
+
   const [user, setUser] = useState<User | null>(null);
+  const [isGuest, setIsGuest] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
-  // 장바구니 상품 (샵 결제용)
   const [cartItems, setCartItems] = useState<CartProduct[]>([]);
+  const [guestProduct, setGuestProduct] = useState<GuestProduct | null>(null);
   const [classPrice, setClassPrice] = useState(
     priceFromUrl ? parseInt(priceFromUrl, 10) : 89000
   );
   const [hasBeginnerDiscount, setHasBeginnerDiscount] = useState(false);
+
   const totalAmount = fromCart
     ? cartItems.reduce((sum, item) => sum + (item.product?.price ?? 0), 0)
-    : classPrice;
+    : fromGuestShop
+      ? guestProduct?.price ?? 0
+      : classPrice;
 
   const [form, setForm] = useState<FormData>({
     name: "",
     phone: "",
+    guestEmail: "",
     experienceLevel: "",
     message: "",
     paymentMethod: "",
@@ -92,52 +111,69 @@ function CheckoutForm() {
     cashReceiptNumber: "",
   });
 
-  /* ── 인증 확인 + 장바구니 로드 ── */
+  /* ── 초기화 (로그인 여부 판정 + 주문 데이터 로드) ── */
   useEffect(() => {
     const init = async () => {
       const {
-        data: { user },
+        data: { user: currentUser },
       } = await supabase.auth.getUser();
 
-      if (!user) {
-        router.replace("/login");
-        return;
+      setUser(currentUser);
+      setIsGuest(!currentUser);
+
+      if (currentUser) {
+        setForm((prev) => ({
+          ...prev,
+          name:
+            currentUser.user_metadata?.full_name ||
+            currentUser.user_metadata?.name ||
+            "",
+        }));
       }
 
-      setUser(user);
-      setForm((prev) => ({
-        ...prev,
-        name: user.user_metadata?.full_name || user.user_metadata?.name || "",
-      }));
+      // ── 클래스 결제: 중급반 할인 (회원 + 초급반 이력 있을 때만) ──
+      if (!isShopOrder && classType === "intermediate") {
+        if (currentUser) {
+          const { data: orders } = await supabase
+            .from("orders")
+            .select("id")
+            .eq("user_id", currentUser.id)
+            .eq("order_type", "class")
+            .eq("status", "completed")
+            .ilike("class_name", "%초급반%")
+            .limit(1);
 
-      // 클래스 결제인 경우: URL의 price 파라미터를 사용하되, 중급반 할인 서버 검증
-      if (!fromCart && classType === "intermediate") {
-        const { data: orders } = await supabase
-          .from("orders")
-          .select("id")
-          .eq("user_id", user.id)
-          .eq("order_type", "class")
-          .eq("status", "completed")
-          .ilike("class_name", "%초급반%")
-          .limit(1);
-
-        if (orders && orders.length > 0) {
-          setHasBeginnerDiscount(true);
-          setClassPrice(109000); // 129,000 - 20,000
+          if (orders && orders.length > 0) {
+            setHasBeginnerDiscount(true);
+            setClassPrice(109000);
+          } else {
+            setHasBeginnerDiscount(false);
+            setClassPrice(129000);
+          }
         } else {
+          // 비회원은 할인 미적용
           setHasBeginnerDiscount(false);
           setClassPrice(129000);
         }
       }
 
-      // 장바구니 결제인 경우 장바구니 데이터 로드
+      // ── 회원 + 장바구니 결제 ──
       if (fromCart) {
+        if (!currentUser) {
+          // 로그인 없이는 장바구니 접근 불가 → 비회원 구매를 안내
+          alert(
+            "장바구니 결제는 로그인이 필요합니다.\n비회원 구매는 상품 상세 페이지에서 '바로 구매하기'를 이용해 주세요."
+          );
+          router.replace("/shop");
+          return;
+        }
+
         const { data, error } = await supabase
           .from("cart_items")
           .select(
             "id, product_id, product:products(id, title, price, category, thumbnail_url)"
           )
-          .eq("user_id", user.id)
+          .eq("user_id", currentUser.id)
           .order("created_at", { ascending: false });
 
         if (error) {
@@ -160,24 +196,61 @@ function CheckoutForm() {
         }
       }
 
+      // ── 비회원 샵 바로구매 ──
+      if (fromGuestShop) {
+        if (!guestProductId) {
+          alert("상품 정보가 없습니다.");
+          router.replace("/shop");
+          return;
+        }
+
+        const { data: prodData, error: prodError } = await supabase
+          .from("products")
+          .select("id, title, price, category, thumbnail_url, remaining_seats")
+          .eq("id", guestProductId)
+          .single();
+
+        if (prodError || !prodData) {
+          alert("상품을 찾을 수 없습니다.");
+          router.replace("/shop");
+          return;
+        }
+
+        if (
+          prodData.remaining_seats !== null &&
+          prodData.remaining_seats <= 0
+        ) {
+          alert("품절된 상품입니다.");
+          router.replace(`/shop/${guestProductId}`);
+          return;
+        }
+
+        setGuestProduct(prodData as GuestProduct);
+      }
+
       setLoading(false);
     };
     init();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /* ── 폼 유효성 ── */
-  const isFormValid = fromCart
-    ? form.name.trim() !== "" &&
-      form.phone.trim() !== "" &&
-      (form.paymentMethod === "card" ||
-        (form.paymentMethod === "bank_transfer" &&
-          form.depositorName.trim() !== ""))
-    : form.name.trim() !== "" &&
-      form.phone.trim() !== "" &&
-      form.experienceLevel !== "" &&
-      (form.paymentMethod === "card" ||
-        (form.paymentMethod === "bank_transfer" &&
-          form.depositorName.trim() !== ""));
+  const baseValid =
+    form.name.trim() !== "" &&
+    form.phone.trim() !== "" &&
+    (form.paymentMethod === "card" ||
+      (form.paymentMethod === "bank_transfer" &&
+        form.depositorName.trim() !== ""));
+
+  const guestEmailValid =
+    !isGuest ||
+    (form.guestEmail.trim() !== "" &&
+      /^\S+@\S+\.\S+$/.test(form.guestEmail.trim()));
+
+  const classSurveyValid =
+    isShopOrder || form.experienceLevel !== "";
+
+  const isFormValid = baseValid && guestEmailValid && classSurveyValid;
 
   /* ── 포트원 V1 결제 ── */
   const handlePortonePayment = () => {
@@ -197,23 +270,41 @@ function CheckoutForm() {
 
     IMP.init(impUid);
 
-    const orderType = fromCart ? "shop" : "class";
+    const orderType = isShopOrder ? "shop" : "class";
     const merchantUid = `${orderType}_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
 
     const orderName = fromCart
       ? cartItems.length === 1
         ? cartItems[0].product.title
         : `${cartItems[0].product.title} 외 ${cartItems.length - 1}건`
-      : className || "원데이 클래스";
+      : fromGuestShop
+        ? guestProduct?.title || "디지털 에셋"
+        : className || "원데이 클래스";
+
+    const buyerEmail = isGuest
+      ? form.guestEmail.trim()
+      : user?.email || "";
+    const buyerPhone = form.phone.trim();
+    const buyerName = form.name.trim();
 
     // 결제 메타데이터 (서버 검증 시 전달)
     const metadata: Record<string, unknown> = {
       orderType,
-      name: form.name.trim(),
-      phone: form.phone.trim(),
+      name: buyerName,
+      phone: buyerPhone,
     };
 
-    if (!fromCart) {
+    if (isGuest) {
+      metadata.guestEmail = buyerEmail;
+      metadata.guestPhone = buyerPhone;
+    }
+
+    if (fromGuestShop && guestProduct) {
+      metadata.productIds = [guestProduct.id];
+      metadata.productName = guestProduct.title;
+    }
+
+    if (!isShopOrder) {
       metadata.className = className;
       metadata.schedule = schedule;
       metadata.experienceLevel = form.experienceLevel;
@@ -230,13 +321,12 @@ function CheckoutForm() {
         merchant_uid: merchantUid,
         name: orderName,
         amount: totalAmount,
-        buyer_email: user?.email || "",
-        buyer_name: form.name.trim(),
-        buyer_tel: form.phone.trim(),
+        buyer_email: buyerEmail,
+        buyer_name: buyerName,
+        buyer_tel: buyerPhone,
       },
       async (response) => {
         if (response.success && response.imp_uid && response.merchant_uid) {
-          // 결제 성공 → 서버 사후 검증
           try {
             const verifyRes = await fetch("/api/portone/verify", {
               method: "POST",
@@ -256,7 +346,12 @@ function CheckoutForm() {
             const verifyData = await verifyRes.json();
 
             if (verifyRes.ok && verifyData.success) {
-              router.push("/checkout/success");
+              const params = new URLSearchParams();
+              if (verifyData.guest) params.set("guest", "1");
+              if (buyerEmail) params.set("email", buyerEmail);
+              router.push(
+                `/checkout/success${params.toString() ? `?${params.toString()}` : ""}`
+              );
             } else {
               const msg = verifyData.error || "결제 검증에 실패했습니다.";
               router.push(
@@ -271,7 +366,6 @@ function CheckoutForm() {
             );
           }
         } else {
-          // 결제 실패 또는 사용자 취소
           const errorMsg = response.error_msg || "결제가 취소되었습니다.";
           const errorCode = response.error_code || "USER_CANCEL";
           router.push(
@@ -285,15 +379,77 @@ function CheckoutForm() {
 
   /* ── 제출 ── */
   const handleSubmit = async () => {
-    if (!isFormValid || !user) return;
+    if (!isFormValid) return;
     setSubmitting(true);
 
     try {
       if (form.paymentMethod === "card") {
-        /* ── 포트원 V1 카드 결제 ── */
         handlePortonePayment();
       } else if (form.paymentMethod === "bank_transfer") {
-        /* ── 계좌 이체 (기존 로직 유지) ── */
+        /* ── 계좌이체 ──
+         * 회원: supabase 클라이언트로 직접 insert
+         * 비회원: RLS 우회가 필요하므로 별도 API(/api/guest-bank-order) 경유
+         *         → 여기서는 간단하게 처리하기 위해 fetch로 verify 와 동일한 흐름의
+         *           서버 엔드포인트를 만들지 않고, Service Role을 사용하는 단일
+         *           api 라우트 'guest-order'를 호출함.
+         *         → 구현을 간단히 유지: 비회원 계좌이체는 서버 API 하나로 묶음.
+         */
+
+        if (isGuest) {
+          // 비회원 계좌이체: 별도 서버 API 호출
+          const payload: Record<string, unknown> = {
+            orderType: isShopOrder ? "shop" : "class",
+            guestEmail: form.guestEmail.trim(),
+            guestPhone: form.phone.trim(),
+            name: form.name.trim(),
+            phone: form.phone.trim(),
+            depositorName: form.depositorName.trim(),
+            cashReceiptNumber: form.cashReceiptNumber.trim() || null,
+            totalAmount,
+          };
+
+          if (fromGuestShop && guestProduct) {
+            payload.productIds = [guestProduct.id];
+          }
+          if (!isShopOrder) {
+            payload.className = className;
+            payload.schedule = schedule;
+            payload.scheduleId = scheduleId || null;
+            payload.classId = classId || null;
+            payload.classType = classType;
+            payload.experienceLevel = form.experienceLevel;
+            payload.message = form.message.trim() || null;
+          }
+
+          const res = await fetch("/api/guest-order/bank-transfer", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+
+          const data = await res.json();
+
+          if (!res.ok) {
+            throw new Error(data.error || "주문 처리에 실패했습니다.");
+          }
+
+          alert(
+            isShopOrder
+              ? "주문이 접수되었습니다!\n입금 확인 후 입력하신 이메일로 다운로드 링크가 발송됩니다."
+              : "수강신청이 접수되었습니다!\n입금 확인 후 입력하신 이메일로 안내 메일이 발송됩니다."
+          );
+          router.push(
+            `/checkout/success?guest=1&pending=1&email=${encodeURIComponent(form.guestEmail.trim())}`
+          );
+          setSubmitting(false);
+          return;
+        }
+
+        // ── 회원 계좌이체 (기존 로직) ──
+        if (!user) {
+          throw new Error("로그인이 필요합니다.");
+        }
+
         if (fromCart) {
           const { data: order, error: orderError } = await supabase
             .from("orders")
@@ -324,7 +480,6 @@ function CheckoutForm() {
           await supabase.from("order_items").insert(orderItems);
           await supabase.from("cart_items").delete().eq("user_id", user.id);
 
-          // 관리자 이메일 알림
           fetch("/api/notify", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -365,7 +520,6 @@ function CheckoutForm() {
 
           if (error) throw new Error(`오류가 발생했습니다: ${error.message}`);
 
-          // 관리자 이메일 알림
           fetch("/api/notify", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -406,6 +560,27 @@ function CheckoutForm() {
   return (
     <div className="pt-20 pb-12">
       <div className="mx-auto max-w-2xl px-6 py-16">
+        {/* ── 비회원 안내 배너 ── */}
+        {isGuest && (
+          <FadeInSection>
+            <div className="mb-6 rounded-xl border border-primary/30 bg-primary/10 p-4">
+              <div className="flex items-start gap-3">
+                <span className="text-xl">💡</span>
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-white">
+                    비회원으로 결제합니다
+                  </p>
+                  <p className="mt-1 text-xs text-sub-text leading-relaxed">
+                    결제 완료 후 입력하신 이메일로 구매 확인 및{" "}
+                    {isShopOrder ? "다운로드 링크" : "수강 안내"}가 자동 발송됩니다.
+                    추후 동일 이메일로 회원가입하시면 내역이 마이페이지에 통합됩니다.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </FadeInSection>
+        )}
+
         {/* ── 주문 요약 ── */}
         <FadeInSection>
           <div className="rounded-xl border border-border bg-card p-7">
@@ -440,6 +615,42 @@ function CheckoutForm() {
                     </span>
                   </div>
                 ))}
+                <div className="border-t border-border pt-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-base text-sub-text">총 결제 금액</span>
+                    <span className="font-display text-2xl font-bold text-primary">
+                      ₩{totalAmount.toLocaleString("ko-KR")}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ) : fromGuestShop && guestProduct ? (
+              <div className="mt-6 space-y-3">
+                <div className="flex items-center gap-3">
+                  <div className="relative h-14 w-20 shrink-0 overflow-hidden rounded-lg border border-border">
+                    {guestProduct.thumbnail_url ? (
+                      <Image
+                        src={guestProduct.thumbnail_url}
+                        alt={guestProduct.title}
+                        fill
+                        className="object-cover"
+                        sizes="80px"
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center bg-background text-[10px] text-sub-text">
+                        img
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-xs uppercase tracking-wider text-primary">
+                      {guestProduct.category}
+                    </p>
+                    <p className="text-sm font-semibold text-white">
+                      {guestProduct.title}
+                    </p>
+                  </div>
+                </div>
                 <div className="border-t border-border pt-3">
                   <div className="flex items-center justify-between">
                     <span className="text-base text-sub-text">총 결제 금액</span>
@@ -490,13 +701,29 @@ function CheckoutForm() {
             <div className="mt-6">
               <label className="block text-sm font-medium text-sub-text mb-2">
                 이메일 <span className="text-primary">*</span>
+                {isGuest && (
+                  <span className="ml-2 text-xs text-primary">
+                    (상품 발송에 사용됩니다)
+                  </span>
+                )}
               </label>
-              <input
-                type="email"
-                value={user?.email ?? ""}
-                readOnly
-                className="w-full rounded-xl border border-border bg-background px-4 py-3 text-base text-sub-text cursor-not-allowed"
-              />
+              {isGuest ? (
+                <input
+                  type="email"
+                  value={form.guestEmail}
+                  onChange={(e) => update("guestEmail", e.target.value)}
+                  placeholder="example@email.com"
+                  autoComplete="email"
+                  className="w-full rounded-xl border border-border bg-background px-4 py-3 text-base text-white placeholder:text-sub-text/50 focus:border-primary focus:outline-none transition-colors"
+                />
+              ) : (
+                <input
+                  type="email"
+                  value={user?.email ?? ""}
+                  readOnly
+                  className="w-full rounded-xl border border-border bg-background px-4 py-3 text-base text-sub-text cursor-not-allowed"
+                />
+              )}
             </div>
 
             <div className="mt-5">
@@ -508,6 +735,7 @@ function CheckoutForm() {
                 value={form.name}
                 onChange={(e) => update("name", e.target.value)}
                 placeholder="실명을 입력해 주세요"
+                autoComplete="name"
                 className="w-full rounded-xl border border-border bg-background px-4 py-3 text-base text-white placeholder:text-sub-text/50 focus:border-primary focus:outline-none transition-colors"
               />
             </div>
@@ -521,6 +749,7 @@ function CheckoutForm() {
                 value={form.phone}
                 onChange={(e) => update("phone", e.target.value)}
                 placeholder="010-0000-0000"
+                autoComplete="tel"
                 className="w-full rounded-xl border border-border bg-background px-4 py-3 text-base text-white placeholder:text-sub-text/50 focus:border-primary focus:outline-none transition-colors"
               />
             </div>
@@ -528,7 +757,7 @@ function CheckoutForm() {
         </FadeInSection>
 
         {/* ── 사전 설문 (클래스 결제만) ── */}
-        {!fromCart && (
+        {!isShopOrder && (
           <FadeInSection delay={0.2}>
             <div className="mt-8 rounded-xl border border-border bg-card p-7">
               <h2 className="text-xl font-bold text-white">수강생 사전 설문</h2>
@@ -596,7 +825,7 @@ function CheckoutForm() {
         )}
 
         {/* ── 결제 수단 ── */}
-        <FadeInSection delay={fromCart ? 0.2 : 0.3}>
+        <FadeInSection delay={isShopOrder ? 0.2 : 0.3}>
           <div className="mt-8 rounded-xl border border-border bg-card p-7">
             <h2 className="text-xl font-bold text-white">결제 수단</h2>
 
@@ -720,7 +949,7 @@ function CheckoutForm() {
         </FadeInSection>
 
         {/* ── 결제 버튼 ── */}
-        <FadeInSection delay={fromCart ? 0.3 : 0.4}>
+        <FadeInSection delay={isShopOrder ? 0.3 : 0.4}>
           <button
             onClick={handleSubmit}
             disabled={!isFormValid || submitting}

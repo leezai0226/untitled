@@ -3,7 +3,10 @@ import { createClient } from "@/utils/supabase/server";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { sanitize } from "@/utils/sanitize";
 import { createRateLimiter } from "@/utils/rateLimit";
-import { sendPaymentNotification } from "@/utils/email";
+import {
+  sendPaymentNotification,
+  sendGuestPurchaseConfirmation,
+} from "@/utils/email";
 
 const rateLimiter = createRateLimiter({ windowMs: 60_000, maxRequests: 10 });
 
@@ -25,7 +28,9 @@ async function getPortoneToken(): Promise<string> {
 
   if (data.code !== 0 || !data.response?.access_token) {
     console.error("[포트원 토큰 발급 실패]", data.message);
-    throw new Error("결제 검증 서버 인증에 실패했습니다. 관리자에게 문의해 주세요.");
+    throw new Error(
+      "결제 검증 서버 인증에 실패했습니다. 관리자에게 문의해 주세요."
+    );
   }
 
   return data.response.access_token;
@@ -46,11 +51,24 @@ async function getPaymentInfo(impUid: string, token: string) {
   return data.response;
 }
 
+/* ── 요청에서 베이스 URL 추출 (이메일 링크 생성용) ── */
+function resolveBaseUrl(request: NextRequest): string {
+  const envUrl = process.env.NEXT_PUBLIC_SITE_URL;
+  if (envUrl) return envUrl.replace(/\/$/, "");
+  const proto = request.headers.get("x-forwarded-proto") ?? "https";
+  const host = request.headers.get("host") ?? "localhost:3000";
+  return `${proto}://${host}`;
+}
+
 /* ═══════════════════════════════════════════════
  * POST /api/portone/verify
  *
  * 프론트엔드에서 IMP.request_pay() 완료 후
  * imp_uid, merchant_uid, metadata를 보내 사후 검증을 수행합니다.
+ *
+ * 회원/비회원 모두 지원:
+ *  - 회원: supabase.auth.getUser()로 user_id 확인
+ *  - 비회원: metadata.guest = { email, phone } 로 식별, user_id는 null
  * ═══════════════════════════════════════════════ */
 export async function POST(request: NextRequest) {
   try {
@@ -75,17 +93,34 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    /* ── 유저 인증 ── */
+    /* ── 유저 인증 (비회원 허용) ── */
     const supabase = await createClient();
     const {
       data: { user },
     } = await supabase.auth.getUser();
 
-    if (!user) {
-      return NextResponse.json(
-        { error: "로그인이 필요합니다." },
-        { status: 401 }
-      );
+    const isGuest = !user;
+    const guestEmail = sanitize((metadata?.guestEmail as string) || "").trim();
+    const guestPhone = sanitize((metadata?.guestPhone as string) || "").trim();
+
+    if (isGuest) {
+      // 비회원이면 guestEmail/guestPhone 필수
+      if (!guestEmail || !guestPhone) {
+        return NextResponse.json(
+          {
+            error:
+              "비회원 결제의 경우 이메일과 연락처가 필요합니다. 결제 정보를 확인해 주세요.",
+          },
+          { status: 400 }
+        );
+      }
+      // 간단한 이메일 형식 검증
+      if (!/^\S+@\S+\.\S+$/.test(guestEmail)) {
+        return NextResponse.json(
+          { error: "유효한 이메일 주소가 아닙니다." },
+          { status: 400 }
+        );
+      }
     }
 
     /* ── 포트원 결제 검증 ── */
@@ -103,45 +138,107 @@ export async function POST(request: NextRequest) {
     /* ── 서버 사이드 금액 검증 ── */
     const orderType = metadata?.orderType || "shop";
     const isShopOrder = orderType === "shop";
+
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !serviceRoleKey) {
+      return NextResponse.json({ error: "서버 설정 오류" }, { status: 500 });
+    }
+
+    const adminClient = createServiceClient(supabaseUrl, serviceRoleKey);
+
     let expectedAmount = 0;
 
     if (isShopOrder) {
-      // 장바구니 기반 금액 검증
-      const { data: cartItems, error: cartError } = await supabase
-        .from("cart_items")
-        .select("product_id, product:products(price, remaining_seats)")
-        .eq("user_id", user.id);
+      /* ── 샵 주문 금액 검증 ──
+       * 회원: cart_items 기반 합계
+       * 비회원: metadata.productIds 기반 합계 (장바구니 없음)
+       */
+      if (isGuest) {
+        const productIds = Array.isArray(metadata?.productIds)
+          ? (metadata.productIds as string[])
+          : [];
 
-      if (cartError || !cartItems || cartItems.length === 0) {
-        return NextResponse.json(
-          { error: "장바구니가 비어 있거나 조회에 실패했습니다." },
-          { status: 400 }
-        );
-      }
-
-      // 품절 체크
-      for (const item of cartItems) {
-        const product = item.product as unknown as {
-          price: number;
-          remaining_seats: number | null;
-        } | null;
-        if (product && product.remaining_seats !== null && product.remaining_seats <= 0) {
+        if (productIds.length === 0) {
           return NextResponse.json(
-            { error: "품절된 상품이 포함되어 있습니다.", code: "OUT_OF_STOCK" },
+            { error: "주문 상품 정보가 누락되었습니다." },
             { status: 400 }
           );
         }
-      }
 
-      expectedAmount = cartItems.reduce((sum, item) => {
-        const product = item.product as unknown as { price: number } | null;
-        return sum + (product?.price ?? 0);
-      }, 0);
+        const { data: guestProducts, error: gpError } = await adminClient
+          .from("products")
+          .select("id, price, remaining_seats, title")
+          .in("id", productIds);
+
+        if (gpError || !guestProducts || guestProducts.length === 0) {
+          return NextResponse.json(
+            { error: "상품 정보 조회에 실패했습니다." },
+            { status: 400 }
+          );
+        }
+
+        for (const p of guestProducts) {
+          if (p.remaining_seats !== null && p.remaining_seats <= 0) {
+            return NextResponse.json(
+              {
+                error: "품절된 상품이 포함되어 있습니다.",
+                code: "OUT_OF_STOCK",
+              },
+              { status: 400 }
+            );
+          }
+        }
+
+        expectedAmount = guestProducts.reduce(
+          (sum, p) => sum + (p.price ?? 0),
+          0
+        );
+      } else {
+        // 회원: 장바구니 기반
+        const { data: cartItems, error: cartError } = await supabase
+          .from("cart_items")
+          .select("product_id, product:products(price, remaining_seats)")
+          .eq("user_id", user.id);
+
+        if (cartError || !cartItems || cartItems.length === 0) {
+          return NextResponse.json(
+            { error: "장바구니가 비어 있거나 조회에 실패했습니다." },
+            { status: 400 }
+          );
+        }
+
+        for (const item of cartItems) {
+          const product = item.product as unknown as {
+            price: number;
+            remaining_seats: number | null;
+          } | null;
+          if (
+            product &&
+            product.remaining_seats !== null &&
+            product.remaining_seats <= 0
+          ) {
+            return NextResponse.json(
+              {
+                error: "품절된 상품이 포함되어 있습니다.",
+                code: "OUT_OF_STOCK",
+              },
+              { status: 400 }
+            );
+          }
+        }
+
+        expectedAmount = cartItems.reduce((sum, item) => {
+          const product = item.product as unknown as { price: number } | null;
+          return sum + (product?.price ?? 0);
+        }, 0);
+      }
     } else {
-      // 클래스 주문 — 좌석 사전 확인
+      /* ── 클래스 주문 금액 검증 ── */
       const scheduleId = metadata?.scheduleId;
       if (scheduleId) {
-        const { data: scheduleRow, error: scheduleError } = await supabase
+        const { data: scheduleRow, error: scheduleError } = await adminClient
           .from("class_schedules")
           .select("remaining_seats")
           .eq("id", scheduleId)
@@ -167,13 +264,9 @@ export async function POST(request: NextRequest) {
       if (classTypeFromMeta === "beginner") {
         expectedAmount = 89000;
       } else if (classTypeFromMeta === "intermediate") {
-        // 초급반 수강 이력 서버 사이드 확인 → 할인 적용 여부 결정
-        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-        const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-        if (supabaseUrl && serviceRoleKey) {
-          const svcClient = createServiceClient(supabaseUrl, serviceRoleKey);
-          const { data: beginnerOrders } = await svcClient
+        // 할인은 회원일 때만 적용 (초급반 수강 이력 기반)
+        if (!isGuest && user) {
+          const { data: beginnerOrders } = await adminClient
             .from("orders")
             .select("id")
             .eq("user_id", user.id)
@@ -183,64 +276,67 @@ export async function POST(request: NextRequest) {
             .limit(1);
 
           if (beginnerOrders && beginnerOrders.length > 0) {
-            expectedAmount = 109000; // 129,000 - 20,000 할인
+            expectedAmount = 109000;
           } else {
             expectedAmount = 129000;
           }
         } else {
+          // 비회원은 할인 미적용
           expectedAmount = 129000;
         }
       } else {
-        // fallback
         expectedAmount = 89000;
       }
     }
 
-    // 위변조 검증: 실제 결제 금액 vs 서버 기대 금액
+    // 위변조 검증
     if (payment.amount !== expectedAmount) {
       console.error(
         `[포트원 위변조 감지] imp_uid=${imp_uid}, paid=${payment.amount}, expected=${expectedAmount}`
       );
       return NextResponse.json(
-        { error: "결제 금액이 일치하지 않습니다. 위변조가 감지되었습니다." },
+        {
+          error: "결제 금액이 일치하지 않습니다. 위변조가 감지되었습니다.",
+        },
         { status: 400 }
       );
     }
 
-    /* ═══ DB 주문 처리 (Service Role — RLS 우회) ═══ */
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    /* ═══ DB 주문 생성 (Service Role) ═══ */
+    const paidAtIso = new Date().toISOString();
 
-    if (!supabaseUrl || !serviceRoleKey) {
-      return NextResponse.json(
-        { error: "서버 설정 오류" },
-        { status: 500 }
-      );
-    }
+    // 이메일 메타 (구매 확인 메일 + 관리자 알림용)
+    const buyerEmail = isGuest ? guestEmail : user.email || "";
+    const buyerPhone = isGuest ? guestPhone : sanitize(metadata?.phone as string) || "";
 
-    const adminClient = createServiceClient(supabaseUrl, serviceRoleKey);
+    const productsForEmail: { productName: string; downloadToken: string }[] =
+      [];
+    let createdOrderId: string | null = null;
+    let createdClassInfo: { className: string; schedule: string } | null = null;
 
     if (isShopOrder) {
-      /* ── 샵 주문 처리 ── */
-      const { data: cartItems } = await adminClient
-        .from("cart_items")
-        .select("id, product_id, product:products(price, remaining_seats)")
-        .eq("user_id", user.id);
+      /* ── 샵 주문 생성 ── */
+      const orderInsert: Record<string, unknown> = {
+        user_id: isGuest ? null : user!.id,
+        order_type: "shop",
+        total_amount: payment.amount,
+        name: sanitize(metadata?.name as string),
+        phone: sanitize(metadata?.phone as string),
+        payment_method: "portone",
+        toss_order_id: merchant_uid,
+        toss_payment_key: imp_uid,
+        status: "completed",
+        paid_at: paidAtIso,
+      };
+
+      if (isGuest) {
+        orderInsert.guest_email = guestEmail;
+        orderInsert.guest_phone = guestPhone;
+      }
 
       const { data: order, error: orderError } = await adminClient
         .from("orders")
-        .insert({
-          user_id: user.id,
-          order_type: "shop",
-          total_amount: payment.amount,
-          name: sanitize(metadata?.name as string),
-          phone: sanitize(metadata?.phone as string),
-          payment_method: "portone",
-          toss_order_id: merchant_uid,
-          toss_payment_key: imp_uid,
-          status: "completed",
-          paid_at: new Date().toISOString(),
-        })
+        .insert(orderInsert)
         .select("id")
         .single();
 
@@ -251,40 +347,85 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      if (cartItems && cartItems.length > 0) {
-        const orderItems = cartItems.map((item) => {
-          const product = item.product as unknown as { price: number } | null;
-          return {
-            order_id: order.id,
-            product_id: item.product_id,
-            price: product?.price ?? 0,
-          };
-        });
+      createdOrderId = order.id;
 
-        const { error: itemsError } = await adminClient.from("order_items").insert(orderItems);
-        if (itemsError) {
-          console.error("[order_items insert 실패]", itemsError.message);
-        }
+      /* ── order_items 생성 ── */
+      type ProductLite = {
+        id: string;
+        price: number;
+        title: string;
+        remaining_seats: number | null;
+      };
+      let products: ProductLite[] = [];
+
+      if (isGuest) {
+        const productIds = (metadata.productIds as string[]) ?? [];
+        const { data: gp } = await adminClient
+          .from("products")
+          .select("id, price, title, remaining_seats")
+          .in("id", productIds);
+        products = (gp ?? []) as ProductLite[];
+      } else {
+        const { data: cartItems } = await adminClient
+          .from("cart_items")
+          .select(
+            "id, product_id, product:products(id, price, title, remaining_seats)"
+          )
+          .eq("user_id", user!.id);
+        products = (cartItems ?? [])
+          .map(
+            (c) =>
+              c.product as unknown as ProductLite | null
+          )
+          .filter((p): p is ProductLite => !!p);
       }
 
-      await adminClient.from("cart_items").delete().eq("user_id", user.id);
+      if (products.length > 0) {
+        const orderItemsInsert = products.map((p) => ({
+          order_id: order.id,
+          product_id: p.id,
+          price: p.price ?? 0,
+        }));
 
-      // 재고 차감
-      if (cartItems && cartItems.length > 0) {
-        for (const item of cartItems) {
-          const product = item.product as unknown as {
-            remaining_seats: number | null;
-          } | null;
-          if (product && product.remaining_seats !== null) {
+        const { data: insertedItems, error: itemsError } = await adminClient
+          .from("order_items")
+          .insert(orderItemsInsert)
+          .select("id, product_id, download_token");
+
+        if (itemsError) {
+          console.error("[order_items insert 실패]", itemsError.message);
+        } else if (insertedItems) {
+          for (const ins of insertedItems) {
+            const pRow = products.find((p) => p.id === ins.product_id);
+            if (pRow && ins.download_token) {
+              productsForEmail.push({
+                productName: pRow.title,
+                downloadToken: ins.download_token as string,
+              });
+            }
+          }
+        }
+
+        // 회원: 장바구니 비우기
+        if (!isGuest) {
+          await adminClient
+            .from("cart_items")
+            .delete()
+            .eq("user_id", user!.id);
+        }
+
+        // 재고 차감
+        for (const p of products) {
+          if (p.remaining_seats !== null) {
             await adminClient.rpc("decrement_seats", {
-              p_product_id: item.product_id,
+              p_product_id: p.id,
               p_quantity: 1,
             });
           }
         }
       }
     } else {
-      /* ── 클래스 주문 처리 ── */
+      /* ── 클래스 주문 생성 ── */
       const scheduleId = (metadata?.scheduleId as string) || null;
 
       // 좌석 원자적 차감
@@ -320,7 +461,7 @@ export async function POST(request: NextRequest) {
       }
 
       const orderData: Record<string, unknown> = {
-        user_id: user.id,
+        user_id: isGuest ? null : user!.id,
         order_type: "class",
         total_amount: payment.amount,
         class_name: sanitize(metadata?.className as string),
@@ -333,49 +474,103 @@ export async function POST(request: NextRequest) {
         toss_order_id: merchant_uid,
         toss_payment_key: imp_uid,
         status: "completed",
-        paid_at: new Date().toISOString(),
+        paid_at: paidAtIso,
       };
 
       if (scheduleId) orderData.schedule_id = scheduleId;
       if (metadata?.classId) orderData.class_id = metadata.classId;
+      if (isGuest) {
+        orderData.guest_email = guestEmail;
+        orderData.guest_phone = guestPhone;
+      }
 
-      const { error: orderError } = await adminClient
+      const { data: classOrder, error: orderError } = await adminClient
         .from("orders")
-        .insert(orderData);
+        .insert(orderData)
+        .select("id")
+        .single();
 
-      if (orderError) {
+      if (orderError || !classOrder) {
         return NextResponse.json(
-          { error: `주문 생성 실패: ${orderError.message}` },
+          { error: `주문 생성 실패: ${orderError?.message}` },
           { status: 500 }
         );
       }
+
+      createdOrderId = classOrder.id;
+      createdClassInfo = {
+        className: sanitize(metadata?.className as string) || "",
+        schedule: sanitize(metadata?.schedule as string) || "",
+      };
     }
 
-    /* ═══ 관리자 이메일 알림 (비동기 — 실패해도 결제 성공) ═══ */
-    const emailBase = {
-      orderType: isShopOrder ? ("shop" as const) : ("class" as const),
-      customerName: sanitize(metadata?.name as string) || "이름 없음",
-      customerEmail: user.email || "",
-      customerPhone: sanitize(metadata?.phone as string) || "",
-      totalAmount: payment.amount as number,
-      paymentMethod: "portone",
-    };
+    /* ═══ 관리자 알림 메일 ═══ */
+    const customerName = sanitize(metadata?.name as string) || "이름 없음";
 
     if (isShopOrder) {
-      const productName = sanitize(metadata?.productName as string) || "디지털 에셋";
+      const productNames = productsForEmail.map((p) => p.productName);
       sendPaymentNotification({
-        ...emailBase,
-        items: [productName],
+        orderType: "shop",
+        customerName,
+        customerEmail: buyerEmail,
+        customerPhone: buyerPhone,
+        totalAmount: payment.amount,
+        paymentMethod: "portone",
+        items:
+          productNames.length > 0
+            ? productNames
+            : [sanitize(metadata?.productName as string) || "디지털 에셋"],
       }).catch(() => {});
     } else {
       sendPaymentNotification({
-        ...emailBase,
-        className: sanitize(metadata?.className as string) || "",
-        schedule: sanitize(metadata?.schedule as string) || "",
+        orderType: "class",
+        customerName,
+        customerEmail: buyerEmail,
+        customerPhone: buyerPhone,
+        totalAmount: payment.amount,
+        paymentMethod: "portone",
+        className: createdClassInfo?.className || "",
+        schedule: createdClassInfo?.schedule || "",
       }).catch(() => {});
     }
 
-    return NextResponse.json({ success: true, payment });
+    /* ═══ 구매자 본인에게 구매 확인 + 상품 전달 메일 ═══
+     * 비회원은 다운로드 링크/클래스 안내를 메일로 받아야 접근 가능하므로 필수.
+     * 회원도 동일한 메일을 받되, 마이페이지에서도 접근 가능.
+     */
+    if (buyerEmail) {
+      const baseUrl = resolveBaseUrl(request);
+      const orderNumber = merchant_uid || createdOrderId || "";
+
+      if (isShopOrder) {
+        sendGuestPurchaseConfirmation({
+          kind: "shop",
+          to: buyerEmail,
+          customerName,
+          totalAmount: payment.amount,
+          paymentMethod: "portone",
+          items: productsForEmail,
+          orderNumber,
+          paidAt: paidAtIso,
+          baseUrl,
+        }).catch(() => {});
+      } else if (createdClassInfo) {
+        sendGuestPurchaseConfirmation({
+          kind: "class",
+          to: buyerEmail,
+          customerName,
+          className: createdClassInfo.className,
+          schedule: createdClassInfo.schedule,
+          totalAmount: payment.amount,
+          paymentMethod: "portone",
+          orderNumber,
+          paidAt: paidAtIso,
+          baseUrl,
+        }).catch(() => {});
+      }
+    }
+
+    return NextResponse.json({ success: true, guest: isGuest, payment });
   } catch (err: unknown) {
     console.error("POST /api/portone/verify 에러:", err);
     return NextResponse.json(
