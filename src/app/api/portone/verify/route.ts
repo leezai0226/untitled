@@ -537,40 +537,65 @@ export async function POST(request: NextRequest) {
     /* ═══ 구매자 본인에게 구매 확인 + 상품 전달 메일 ═══
      * 비회원은 다운로드 링크/클래스 안내를 메일로 받아야 접근 가능하므로 필수.
      * 회원도 동일한 메일을 받되, 마이페이지에서도 접근 가능.
+     *
+     * ⚠️ 결제는 이미 포트원에서 완료된 상태이므로, 메일 발송 실패가
+     *    주문 완료 자체를 막지는 않습니다. 대신 응답에 emailSent 플래그를 포함해
+     *    클라이언트에서 "메일이 도달하지 않으면 관리자에게 문의" 안내를 표시합니다.
      */
+    let emailSent = false;
+    let emailError: string | undefined;
+
     if (buyerEmail) {
       const baseUrl = resolveBaseUrl(request);
       const orderNumber = merchant_uid || createdOrderId || "";
 
-      if (isShopOrder) {
-        sendGuestPurchaseConfirmation({
-          kind: "shop",
-          to: buyerEmail,
-          customerName,
-          totalAmount: payment.amount,
-          paymentMethod: "portone",
-          items: productsForEmail,
-          orderNumber,
-          paidAt: paidAtIso,
-          baseUrl,
-        }).catch(() => {});
-      } else if (createdClassInfo) {
-        sendGuestPurchaseConfirmation({
-          kind: "class",
-          to: buyerEmail,
-          customerName,
-          className: createdClassInfo.className,
-          schedule: createdClassInfo.schedule,
-          totalAmount: payment.amount,
-          paymentMethod: "portone",
-          orderNumber,
-          paidAt: paidAtIso,
-          baseUrl,
-        }).catch(() => {});
+      try {
+        if (isShopOrder) {
+          const result = await sendGuestPurchaseConfirmation({
+            kind: "shop",
+            to: buyerEmail,
+            customerName,
+            totalAmount: payment.amount,
+            paymentMethod: "portone",
+            items: productsForEmail,
+            orderNumber,
+            paidAt: paidAtIso,
+            baseUrl,
+          });
+          emailSent = result.ok;
+          emailError = result.error;
+        } else if (createdClassInfo) {
+          const result = await sendGuestPurchaseConfirmation({
+            kind: "class",
+            to: buyerEmail,
+            customerName,
+            className: createdClassInfo.className,
+            schedule: createdClassInfo.schedule,
+            totalAmount: payment.amount,
+            paymentMethod: "portone",
+            orderNumber,
+            paidAt: paidAtIso,
+            baseUrl,
+          });
+          emailSent = result.ok;
+          emailError = result.error;
+        }
+      } catch (err) {
+        emailSent = false;
+        emailError = err instanceof Error ? err.message : "email error";
+        console.error("[verify] 구매 확인 메일 발송 예외:", err);
       }
     }
 
-    return NextResponse.json({ success: true, guest: isGuest, payment });
+    // 관리자 알림은 이미 위에서 비동기 실행 중 — 대기하지 않음
+
+    return NextResponse.json({
+      success: true,
+      guest: isGuest,
+      payment,
+      emailSent,
+      emailError,
+    });
   } catch (err: unknown) {
     console.error("POST /api/portone/verify 에러:", err);
     return NextResponse.json(

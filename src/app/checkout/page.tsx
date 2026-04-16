@@ -349,6 +349,11 @@ function CheckoutForm() {
               const params = new URLSearchParams();
               if (verifyData.guest) params.set("guest", "1");
               if (buyerEmail) params.set("email", buyerEmail);
+              // 비회원인데 이메일 발송이 실패한 경우에도 결제 자체는 완료
+              // → success 페이지에서 관리자 문의 안내를 띄울 수 있도록 플래그 전달
+              if (verifyData.emailSent === false) {
+                params.set("mail_failed", "1");
+              }
               router.push(
                 `/checkout/success${params.toString() ? `?${params.toString()}` : ""}`
               );

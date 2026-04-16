@@ -9,6 +9,13 @@ function getResendClient(): Resend | null {
   return new Resend(key);
 }
 
+/* ── 이메일 발송 공통 결과 타입 ── */
+export interface EmailResult {
+  ok: boolean;
+  error?: string;
+  messageId?: string;
+}
+
 interface PaymentNotification {
   orderType: "shop" | "class";
   customerName: string;
@@ -24,12 +31,14 @@ interface PaymentNotification {
 /**
  * 관리자에게 결제 완료 알림 이메일을 발송합니다.
  */
-export async function sendPaymentNotification(data: PaymentNotification) {
+export async function sendPaymentNotification(
+  data: PaymentNotification
+): Promise<EmailResult> {
   try {
     const resend = getResendClient();
     if (!resend) {
       console.warn("[이메일] RESEND_API_KEY가 설정되지 않아 이메일 발송을 건너뜁니다.");
-      return;
+      return { ok: false, error: "RESEND_API_KEY missing" };
     }
 
     const isClass = data.orderType === "class";
@@ -67,17 +76,29 @@ export async function sendPaymentNotification(data: PaymentNotification) {
       </div>
     `;
 
-    await resend.emails.send({
+    const { data: sent, error: sendError } = await resend.emails.send({
       from: FROM_EMAIL,
       to: ADMIN_EMAIL,
       subject: `[untitled-studio] ${isClass ? "클래스 수강신청" : "디지털 에셋 주문"} — ${data.customerName} / ₩${data.totalAmount.toLocaleString("ko-KR")}`,
       html,
     });
 
-    console.log("[이메일] 관리자 결제 알림 발송 완료");
+    if (sendError) {
+      console.error("[이메일] 관리자 알림 발송 실패:", sendError);
+      return { ok: false, error: sendError.message || "Resend error" };
+    }
+
+    console.log(
+      `[이메일] 관리자 결제 알림 발송 완료 (id=${sent?.id ?? "unknown"})`
+    );
+    return { ok: true, messageId: sent?.id };
   } catch (err) {
     // 이메일 실패가 결제 플로우를 막지 않도록 에러만 로깅
     console.error("[이메일 발송 실패]", err);
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "unknown",
+    };
   }
 }
 
@@ -99,12 +120,14 @@ interface RefundNotification {
 /**
  * 관리자에게 환불 완료 알림 이메일을 발송합니다.
  */
-export async function sendRefundNotification(data: RefundNotification) {
+export async function sendRefundNotification(
+  data: RefundNotification
+): Promise<EmailResult> {
   try {
     const resend = getResendClient();
     if (!resend) {
       console.warn("[이메일] RESEND_API_KEY가 설정되지 않아 이메일 발송을 건너뜁니다.");
-      return;
+      return { ok: false, error: "RESEND_API_KEY missing" };
     }
 
     const isClass = data.orderType === "class";
@@ -140,16 +163,28 @@ export async function sendRefundNotification(data: RefundNotification) {
       </div>
     `;
 
-    await resend.emails.send({
+    const { data: sent, error: sendError } = await resend.emails.send({
       from: FROM_EMAIL,
       to: ADMIN_EMAIL,
       subject: `[untitled-studio] 환불 완료 — ${data.customerName} / ₩${data.refundAmount.toLocaleString("ko-KR")}`,
       html,
     });
 
-    console.log("[이메일] 관리자 환불 알림 발송 완료");
+    if (sendError) {
+      console.error("[이메일] 환불 알림 발송 실패:", sendError);
+      return { ok: false, error: sendError.message || "Resend error" };
+    }
+
+    console.log(
+      `[이메일] 관리자 환불 알림 발송 완료 (id=${sent?.id ?? "unknown"})`
+    );
+    return { ok: true, messageId: sent?.id };
   } catch (err) {
     console.error("[이메일 환불 알림 발송 실패]", err);
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "unknown",
+    };
   }
 }
 
@@ -192,14 +227,16 @@ type GuestPurchaseData = GuestShopConfirmation | GuestClassConfirmation;
  * - Shop: 각 상품에 대한 토큰 기반 다운로드 링크 (30일 유효)
  * - Class: 수강 안내 + 문의처
  */
-export async function sendGuestPurchaseConfirmation(data: GuestPurchaseData) {
+export async function sendGuestPurchaseConfirmation(
+  data: GuestPurchaseData
+): Promise<EmailResult> {
   try {
     const resend = getResendClient();
     if (!resend) {
       console.warn(
         "[이메일] RESEND_API_KEY가 설정되지 않아 비회원 구매 확인 메일 발송을 건너뜁니다."
       );
-      return;
+      return { ok: false, error: "RESEND_API_KEY missing" };
     }
 
     const paymentLabel =
@@ -327,15 +364,34 @@ export async function sendGuestPurchaseConfirmation(data: GuestPurchaseData) {
       </div>
     `;
 
-    await resend.emails.send({
+    const { data: sent, error: sendError } = await resend.emails.send({
       from: FROM_EMAIL,
       to: data.to,
       subject,
       html,
     });
 
-    console.log(`[이메일] 구매 확인 메일 발송 완료 → ${data.to}`);
+    if (sendError) {
+      // Resend가 반환한 실제 에러(도메인 미인증, 수신자 형식 오류, 403 등) 상세 로깅
+      console.error(
+        `[이메일] 구매 확인 메일 발송 실패 → ${data.to}`,
+        JSON.stringify(sendError, null, 2)
+      );
+      return { ok: false, error: sendError.message || "Resend error" };
+    }
+
+    console.log(
+      `[이메일] 구매 확인 메일 발송 완료 → ${data.to} (id=${sent?.id ?? "unknown"})`
+    );
+    return { ok: true, messageId: sent?.id };
   } catch (err) {
-    console.error("[이메일 구매 확인 발송 실패]", err);
+    console.error(
+      `[이메일 구매 확인 발송 예외] → ${data.to}`,
+      err
+    );
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "unknown",
+    };
   }
 }

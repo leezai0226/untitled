@@ -10,6 +10,7 @@ function SuccessInner() {
 
   const isGuest = searchParams.get("guest") === "1";
   const isPending = searchParams.get("pending") === "1";
+  const mailFailed = searchParams.get("mail_failed") === "1";
   const email = searchParams.get("email") || "";
 
   // 회원은 3초 뒤 마이페이지로 이동
@@ -93,30 +94,53 @@ function SuccessInner() {
             <p className="mt-3 text-base leading-relaxed text-sub-text">
               구매해 주셔서 감사합니다.
               <br />
-              입력하신 이메일로 다운로드 링크 및 안내 메일이 발송되었습니다.
+              {mailFailed
+                ? "결제는 정상 완료되었지만 안내 메일 발송에 실패했습니다."
+                : "입력하신 이메일로 다운로드 링크 및 안내 메일이 발송되었습니다."}
             </p>
 
             {email && (
               <div className="mt-6 rounded-xl bg-background/50 px-4 py-3">
-                <p className="text-xs text-sub-text">발송 이메일</p>
+                <p className="text-xs text-sub-text">
+                  {mailFailed ? "입력하신 이메일" : "발송 이메일"}
+                </p>
                 <p className="mt-1 break-all font-display text-sm font-semibold text-primary">
                   {email}
                 </p>
               </div>
             )}
 
-            <div className="mt-6 rounded-xl border border-primary/20 bg-primary/5 p-4 text-left">
-              <p className="mb-2 text-sm font-semibold text-primary">
-                💡 메일이 오지 않나요?
-              </p>
-              <ul className="space-y-1 text-xs leading-relaxed text-sub-text">
-                <li>· 스팸함 / 프로모션 탭을 확인해 주세요.</li>
-                <li>· 다운로드 링크는 결제일로부터 30일간 유효합니다.</li>
-                <li>
-                  · 추후 동일 이메일로 회원가입 시 마이페이지에 자동 통합됩니다.
-                </li>
-              </ul>
-            </div>
+            {mailFailed ? (
+              <div className="mt-6 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-left">
+                <p className="mb-2 text-sm font-semibold text-red-400">
+                  ⚠️ 메일 발송 실패 안내
+                </p>
+                <p className="text-xs leading-relaxed text-sub-text">
+                  결제는 정상적으로 완료되었습니다. 다만 시스템 문제로 안내 메일
+                  발송에 실패했습니다.
+                  <br />
+                  <strong className="text-white">
+                    untitled.mooje@gmail.com
+                  </strong>
+                  으로 주문자 정보와 함께 문의해 주시면 빠르게 상품을
+                  전달해드리겠습니다.
+                </p>
+              </div>
+            ) : (
+              <div className="mt-6 rounded-xl border border-primary/20 bg-primary/5 p-4 text-left">
+                <p className="mb-2 text-sm font-semibold text-primary">
+                  💡 메일이 오지 않나요?
+                </p>
+                <ul className="space-y-1 text-xs leading-relaxed text-sub-text">
+                  <li>· 스팸함 / 프로모션 탭을 확인해 주세요.</li>
+                  <li>· 다운로드 링크는 결제일로부터 30일간 유효합니다.</li>
+                  <li>
+                    · 추후 동일 이메일로 회원가입 시 마이페이지에 자동
+                    통합됩니다.
+                  </li>
+                </ul>
+              </div>
+            )}
 
             <div className="mt-6 flex flex-col gap-2">
               <Link
