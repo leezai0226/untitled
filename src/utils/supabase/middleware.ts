@@ -35,7 +35,10 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   // 로그인 필요 페이지 보호
-  const protectedPaths = ["/mypage", "/checkout", "/cart"];
+  // NOTE: /checkout 은 비회원 바로구매(?from=guest_shop) / 비회원 클래스 결제도 지원하므로
+  //       미들웨어에서 일괄 차단하지 않고, 페이지 내부에서 모드별로 처리합니다.
+  //       회원 전용 모드(/checkout?from=cart)는 checkout 페이지가 직접 리다이렉트합니다.
+  const protectedPaths = ["/mypage", "/cart"];
   const isProtected = protectedPaths.some((p) =>
     request.nextUrl.pathname.startsWith(p)
   );
