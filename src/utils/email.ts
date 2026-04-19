@@ -190,6 +190,111 @@ export async function sendRefundNotification(
 
 /* ───────────────────────────── 비회원 구매 확인 ───────────────────────────── */
 
+/* ───────────────────────────── 무통장 입금 접수 확인 ───────────────────────────── */
+
+interface BankTransferReceivedData {
+  kind: "shop" | "class";
+  to: string;
+  customerName: string;
+  totalAmount: number;
+  orderNumber: string;
+  items?: string[];       // shop: 상품명 목록
+  className?: string;     // class
+  schedule?: string;      // class
+}
+
+const BANK_INFO = "카카오뱅크 3333-28-7160406 (예금주: 이영재)";
+
+/**
+ * 비회원 무통장 입금 신청 직후 구매자에게 "접수 확인" 메일을 발송합니다.
+ * 입금 확인 후 별도로 다운로드 링크 / 수강 안내 메일이 발송됩니다.
+ */
+export async function sendBankTransferReceived(
+  data: BankTransferReceivedData
+): Promise<EmailResult> {
+  try {
+    const resend = getResendClient();
+    if (!resend) {
+      console.warn("[이메일] RESEND_API_KEY 없음 — 접수 확인 메일 건너뜀");
+      return { ok: false, error: "RESEND_API_KEY missing" };
+    }
+
+    const isClass = data.kind === "class";
+    const subject = isClass
+      ? `[untitled-studio] 수강신청 접수 확인 (주문번호: ${data.orderNumber})`
+      : `[untitled-studio] 주문 접수 확인 (주문번호: ${data.orderNumber})`;
+
+    const itemsHtml = isClass
+      ? `<tr><td style="padding:8px 12px;border:1px solid #333;color:#ccc;">클래스</td><td style="padding:8px 12px;border:1px solid #333;color:#fff;">${data.className || "-"}</td></tr>
+         <tr><td style="padding:8px 12px;border:1px solid #333;color:#ccc;">일정</td><td style="padding:8px 12px;border:1px solid #333;color:#fff;">${data.schedule || "-"}</td></tr>`
+      : (data.items || [])
+          .map(
+            (name) =>
+              `<tr><td style="padding:8px 12px;border:1px solid #333;color:#ccc;">상품</td><td style="padding:8px 12px;border:1px solid #333;color:#fff;">${name}</td></tr>`
+          )
+          .join("");
+
+    const nextStep = isClass
+      ? "입금 확인 후 이메일로 수강 안내 메일이 발송됩니다."
+      : "입금 확인 후 이메일로 다운로드 링크가 발송됩니다.";
+
+    const html = `
+      <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:560px;margin:0 auto;background:#1a1a1a;border-radius:12px;padding:32px;color:#fff;">
+        <h2 style="margin:0 0 20px;color:#c8a2ff;">⏳ ${isClass ? "수강신청이" : "주문이"} 접수되었습니다!</h2>
+        <p style="margin:0 0 16px;color:#fff;line-height:1.6;">
+          ${data.customerName} 님, ${isClass ? "수강신청" : "주문"}해 주셔서 감사합니다.<br/>
+          아래 계좌로 입금해 주시면 확인 후 안내드립니다.
+        </p>
+
+        <div style="background:#1f1a2e;border:1px solid #c8a2ff44;border-radius:8px;padding:16px;margin-bottom:20px;">
+          <p style="margin:0 0 6px;color:#c8a2ff;font-weight:600;">💳 입금 계좌</p>
+          <p style="margin:0;color:#fff;font-size:15px;font-weight:600;">${BANK_INFO}</p>
+          <p style="margin:8px 0 0;color:#aaa;font-size:13px;">입금 금액: <span style="color:#c8a2ff;font-weight:bold;">₩${data.totalAmount.toLocaleString("ko-KR")}</span></p>
+        </div>
+
+        <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
+          ${itemsHtml}
+          <tr><td style="padding:8px 12px;border:1px solid #333;color:#ccc;">결제 금액</td><td style="padding:8px 12px;border:1px solid #333;color:#c8a2ff;font-weight:bold;">₩${data.totalAmount.toLocaleString("ko-KR")}</td></tr>
+          <tr><td style="padding:8px 12px;border:1px solid #333;color:#ccc;">결제 수단</td><td style="padding:8px 12px;border:1px solid #333;color:#fff;">계좌이체 (무통장입금)</td></tr>
+          <tr><td style="padding:8px 12px;border:1px solid #333;color:#ccc;">주문 번호</td><td style="padding:8px 12px;border:1px solid #333;color:#fff;font-family:monospace;">${data.orderNumber}</td></tr>
+        </table>
+
+        <div style="background:#0f0f0f;border:1px solid #333;border-radius:8px;padding:16px;margin-bottom:20px;">
+          <p style="margin:0;color:#aaa;font-size:13px;line-height:1.7;">
+            📌 ${nextStep}<br/>
+            영업일 기준 1~2일 내 처리됩니다.
+          </p>
+        </div>
+
+        <p style="margin:12px 0 0;color:#666;font-size:11px;">
+          문의: untitled.mooje@gmail.com<br/>
+          이 메일은 자동 발송된 알림입니다.
+        </p>
+      </div>
+    `;
+
+    const { data: sent, error: sendError } = await resend.emails.send({
+      from: FROM_EMAIL,
+      to: data.to,
+      subject,
+      html,
+    });
+
+    if (sendError) {
+      console.error(`[이메일] 접수 확인 메일 발송 실패 → ${data.to}`, JSON.stringify(sendError, null, 2));
+      return { ok: false, error: sendError.message || "Resend error" };
+    }
+
+    console.log(`[이메일] 접수 확인 메일 발송 완료 → ${data.to} (id=${sent?.id ?? "unknown"})`);
+    return { ok: true, messageId: sent?.id };
+  } catch (err) {
+    console.error(`[이메일 접수 확인 발송 예외] → ${data.to}`, err);
+    return { ok: false, error: err instanceof Error ? err.message : "unknown" };
+  }
+}
+
+/* ───────────────────────────── 비회원 구매 확인 ───────────────────────────── */
+
 interface GuestShopItem {
   productName: string;
   downloadToken: string; // UUID

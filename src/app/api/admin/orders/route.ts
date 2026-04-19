@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/utils/supabase/server";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { verifyAdmin } from "@/utils/verifyAdmin";
 import { createRateLimiter } from "@/utils/rateLimit";
+import { sendGuestPurchaseConfirmation } from "@/utils/email";
 
 const rateLimiter = createRateLimiter({ windowMs: 60_000, maxRequests: 30 });
 
@@ -183,17 +183,27 @@ export async function PUT(request: NextRequest) {
     );
   }
 
-  const supabase = await createClient();
-
+  const nowIso = new Date().toISOString();
   const updateData: Record<string, unknown> = { status };
   if (status === "completed") {
-    updateData.paid_at = new Date().toISOString();
+    updateData.paid_at = nowIso;
   }
   if (status === "refunded") {
-    updateData.refunded_at = new Date().toISOString();
+    updateData.refunded_at = nowIso;
   }
 
-  const { error } = await supabase
+  // 입금 확인 전에 주문 정보 미리 조회 (이메일 발송용)
+  let orderForEmail: Record<string, unknown> | null = null;
+  if (status === "completed") {
+    const { data: ord } = await adminClient
+      .from("orders")
+      .select("id, order_type, guest_email, name, total_amount, class_name, schedule, payment_method, toss_order_id, status")
+      .eq("id", id)
+      .single();
+    orderForEmail = ord ?? null;
+  }
+
+  const { error } = await adminClient
     .from("orders")
     .update(updateData)
     .eq("id", id);
@@ -203,6 +213,56 @@ export async function PUT(request: NextRequest) {
       { error: `주문 상태 변경 실패: ${error.message}` },
       { status: 500 }
     );
+  }
+
+  // 비회원 입금 확인 시 이메일 발송
+  if (
+    status === "completed" &&
+    orderForEmail &&
+    orderForEmail.guest_email &&
+    orderForEmail.status === "pending"
+  ) {
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://www.untitled-studio.kr";
+    const orderNumber = (orderForEmail.toss_order_id as string | null) || (orderForEmail.id as string);
+
+    if (orderForEmail.order_type === "shop") {
+      // order_items + download_token 조회
+      const { data: items } = await adminClient
+        .from("order_items")
+        .select("download_token, product:products(title)")
+        .eq("order_id", id)
+        .is("refunded_at", null);
+
+      const emailItems = (items ?? []).map((it) => ({
+        productName: (it.product as { title: string } | null)?.title ?? "상품",
+        downloadToken: it.download_token as string,
+      }));
+
+      sendGuestPurchaseConfirmation({
+        kind: "shop",
+        to: orderForEmail.guest_email as string,
+        customerName: (orderForEmail.name as string) || "고객",
+        totalAmount: orderForEmail.total_amount as number,
+        paymentMethod: "bank_transfer",
+        items: emailItems,
+        orderNumber,
+        paidAt: nowIso,
+        baseUrl,
+      }).catch(() => {});
+    } else if (orderForEmail.order_type === "class") {
+      sendGuestPurchaseConfirmation({
+        kind: "class",
+        to: orderForEmail.guest_email as string,
+        customerName: (orderForEmail.name as string) || "고객",
+        className: (orderForEmail.class_name as string) || "",
+        schedule: (orderForEmail.schedule as string) || "",
+        totalAmount: orderForEmail.total_amount as number,
+        paymentMethod: "bank_transfer",
+        orderNumber,
+        paidAt: nowIso,
+        baseUrl,
+      }).catch(() => {});
+    }
   }
 
   return NextResponse.json({ success: true });
