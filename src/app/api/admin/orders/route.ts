@@ -233,10 +233,14 @@ export async function PUT(request: NextRequest) {
         .eq("order_id", id)
         .is("refunded_at", null);
 
-      const emailItems = (items ?? []).map((it) => ({
-        productName: (it.product as { title: string } | null)?.title ?? "상품",
-        downloadToken: it.download_token as string,
-      }));
+      const emailItems = (items ?? []).map((it) => {
+        const prod = it.product as unknown as { title?: string } | { title?: string }[] | null;
+        const title = Array.isArray(prod) ? prod[0]?.title : prod?.title;
+        return {
+          productName: title ?? "상품",
+          downloadToken: it.download_token as string,
+        };
+      });
 
       sendGuestPurchaseConfirmation({
         kind: "shop",

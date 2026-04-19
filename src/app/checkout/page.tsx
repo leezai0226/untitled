@@ -314,6 +314,34 @@ function CheckoutForm() {
       if (classId) metadata.classId = classId;
     }
 
+    /* ── 모바일 redirect 흐름 백업 + webhook 폴백을 위한 정보 저장 ──
+     *
+     * 1) sessionStorage: 같은 origin으로 redirect 돌아오면 그대로 복원하여 verify에 전달
+     * 2) custom_data: PortOne 결제정보에 함께 저장되어 webhook이 사용
+     */
+    const customDataPayload = {
+      ...metadata,
+      userId: user?.id ?? null,
+      userEmail: user?.email ?? null,
+    };
+
+    try {
+      sessionStorage.setItem(
+        "portone_pending_metadata",
+        JSON.stringify({
+          merchantUid,
+          metadata,
+          buyerEmail,
+        })
+      );
+    } catch {
+      // private mode 등 — 무시
+    }
+
+    const origin =
+      typeof window !== "undefined" ? window.location.origin : "";
+    const mRedirectUrl = `${origin}/checkout/verify-redirect`;
+
     IMP.request_pay(
       {
         pg: "html5_inicis",
@@ -324,6 +352,10 @@ function CheckoutForm() {
         buyer_email: buyerEmail,
         buyer_name: buyerName,
         buyer_tel: buyerPhone,
+        // 모바일 결제 시 PG 결제창에서 돌아올 URL — desktop은 무시됨
+        m_redirect_url: mRedirectUrl,
+        // webhook이 metadata를 복원할 수 있도록 결제정보에 함께 저장
+        custom_data: JSON.stringify(customDataPayload),
       },
       async (response) => {
         if (response.success && response.imp_uid && response.merchant_uid) {
