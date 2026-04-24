@@ -78,7 +78,7 @@ export async function PUT(request: NextRequest) {
     // 대상 주문 조회
     const { data: order, error: orderError } = await adminClient
       .from("orders")
-      .select("id, status, order_type, payment_method, schedule_id")
+      .select("id, status, order_type, payment_method, schedule_id, guest_email, name, total_amount")
       .eq("id", id)
       .single();
 
