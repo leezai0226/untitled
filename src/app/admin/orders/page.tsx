@@ -173,6 +173,15 @@ export default function AdminOrdersPage() {
             o.id === orderId ? { ...o, status: "completed" } : o
           )
         );
+
+        // 이메일 전송 상태 피드백
+        const emailStatus = data.emailSent
+          ? "✓ 입금 확인 완료\n✓ 고객 이메일 전송됨"
+          : data.emailError
+            ? `✓ 입금 확인 완료\n⚠ 이메일 전송 실패: ${data.emailError}\n(고객에게 별도로 안내 필요)`
+            : "✓ 입금 확인 완료\n(이메일 미발송 - 비회원 주문이 아니거나 이메일 없음)";
+
+        alert(emailStatus);
       }
     } catch {
       alert("서버 오류가 발생했습니다.");
@@ -207,6 +216,15 @@ export default function AdminOrdersPage() {
             o.id === orderId ? { ...o, status: "refunded" } : o
           )
         );
+
+        // 이메일 전송 상태 피드백
+        const emailStatus = data.emailSent
+          ? "✓ 환불 승인 완료\n✓ 고객 이메일 전송됨"
+          : data.emailError
+            ? `✓ 환불 승인 완료\n⚠ 이메일 전송 실패: ${data.emailError}\n(고객에게 별도로 안내 필요)`
+            : "✓ 환불 승인 완료\n(이메일 미발송 - 비회원 주문이 아니거나 이메일 없음)";
+
+        alert(emailStatus);
       }
     } catch {
       alert("서버 오류가 발생했습니다.");

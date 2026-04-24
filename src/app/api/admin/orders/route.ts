@@ -156,7 +156,71 @@ export async function PUT(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ success: true, status: "refunded" });
+    // 4) 환불 시에도 비회원 이메일 발송 시도
+    let emailSent = false;
+    let emailError: string | null = null;
+
+    if (order.guest_email) {
+      try {
+        const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://www.untitled-studio.kr";
+        const orderNumber = order.id;
+
+        if (order.order_type === "shop") {
+          const { data: items } = await adminClient
+            .from("order_items")
+            .select("download_token, product:products(title)")
+            .eq("order_id", id)
+            .is("refunded_at", null);
+
+          const emailItems = (items ?? []).map((it) => {
+            const prod = it.product as unknown as { title?: string } | { title?: string }[] | null;
+            const title = Array.isArray(prod) ? prod[0]?.title : prod?.title;
+            return {
+              productName: title ?? "상품",
+              downloadToken: it.download_token as string,
+            };
+          });
+
+          await sendGuestPurchaseConfirmation({
+            kind: "shop",
+            to: order.guest_email as string,
+            customerName: order.name as string || "고객",
+            totalAmount: order.total_amount as number || 0,
+            paymentMethod: "bank_transfer",
+            items: emailItems,
+            orderNumber,
+            paidAt: nowIso,
+            baseUrl,
+          });
+          emailSent = true;
+        } else if (order.order_type === "class") {
+          const { data: classOrder } = await adminClient
+            .from("orders")
+            .select("class_name, schedule")
+            .eq("id", id)
+            .single();
+
+          await sendGuestPurchaseConfirmation({
+            kind: "class",
+            to: order.guest_email as string,
+            customerName: order.name as string || "고객",
+            className: (classOrder?.class_name as string) || "",
+            schedule: (classOrder?.schedule as string) || "",
+            totalAmount: order.total_amount as number || 0,
+            paymentMethod: "bank_transfer",
+            orderNumber,
+            paidAt: nowIso,
+            baseUrl,
+          });
+          emailSent = true;
+        }
+      } catch (err) {
+        emailError = err instanceof Error ? err.message : "알 수 없는 오류";
+        console.error(`[환불 승인 이메일 발송 실패] ${id}:`, err);
+      }
+    }
+
+    return NextResponse.json({ success: true, status: "refunded", emailSent, emailError });
   }
 
   /* ──────────────────────────────────────────
@@ -216,6 +280,9 @@ export async function PUT(request: NextRequest) {
   }
 
   // 비회원 입금 확인 시 이메일 발송
+  let emailSent = false;
+  let emailError: string | null = null;
+
   if (
     status === "completed" &&
     orderForEmail &&
@@ -225,51 +292,58 @@ export async function PUT(request: NextRequest) {
     const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://www.untitled-studio.kr";
     const orderNumber = (orderForEmail.toss_order_id as string | null) || (orderForEmail.id as string);
 
-    if (orderForEmail.order_type === "shop") {
-      // order_items + download_token 조회
-      const { data: items } = await adminClient
-        .from("order_items")
-        .select("download_token, product:products(title)")
-        .eq("order_id", id)
-        .is("refunded_at", null);
+    try {
+      if (orderForEmail.order_type === "shop") {
+        // order_items + download_token 조회
+        const { data: items } = await adminClient
+          .from("order_items")
+          .select("download_token, product:products(title)")
+          .eq("order_id", id)
+          .is("refunded_at", null);
 
-      const emailItems = (items ?? []).map((it) => {
-        const prod = it.product as unknown as { title?: string } | { title?: string }[] | null;
-        const title = Array.isArray(prod) ? prod[0]?.title : prod?.title;
-        return {
-          productName: title ?? "상품",
-          downloadToken: it.download_token as string,
-        };
-      });
+        const emailItems = (items ?? []).map((it) => {
+          const prod = it.product as unknown as { title?: string } | { title?: string }[] | null;
+          const title = Array.isArray(prod) ? prod[0]?.title : prod?.title;
+          return {
+            productName: title ?? "상품",
+            downloadToken: it.download_token as string,
+          };
+        });
 
-      sendGuestPurchaseConfirmation({
-        kind: "shop",
-        to: orderForEmail.guest_email as string,
-        customerName: (orderForEmail.name as string) || "고객",
-        totalAmount: orderForEmail.total_amount as number,
-        paymentMethod: "bank_transfer",
-        items: emailItems,
-        orderNumber,
-        paidAt: nowIso,
-        baseUrl,
-      }).catch(() => {});
-    } else if (orderForEmail.order_type === "class") {
-      sendGuestPurchaseConfirmation({
-        kind: "class",
-        to: orderForEmail.guest_email as string,
-        customerName: (orderForEmail.name as string) || "고객",
-        className: (orderForEmail.class_name as string) || "",
-        schedule: (orderForEmail.schedule as string) || "",
-        totalAmount: orderForEmail.total_amount as number,
-        paymentMethod: "bank_transfer",
-        orderNumber,
-        paidAt: nowIso,
-        baseUrl,
-      }).catch(() => {});
+        await sendGuestPurchaseConfirmation({
+          kind: "shop",
+          to: orderForEmail.guest_email as string,
+          customerName: (orderForEmail.name as string) || "고객",
+          totalAmount: orderForEmail.total_amount as number,
+          paymentMethod: "bank_transfer",
+          items: emailItems,
+          orderNumber,
+          paidAt: nowIso,
+          baseUrl,
+        });
+        emailSent = true;
+      } else if (orderForEmail.order_type === "class") {
+        await sendGuestPurchaseConfirmation({
+          kind: "class",
+          to: orderForEmail.guest_email as string,
+          customerName: (orderForEmail.name as string) || "고객",
+          className: (orderForEmail.class_name as string) || "",
+          schedule: (orderForEmail.schedule as string) || "",
+          totalAmount: orderForEmail.total_amount as number,
+          paymentMethod: "bank_transfer",
+          orderNumber,
+          paidAt: nowIso,
+          baseUrl,
+        });
+        emailSent = true;
+      }
+    } catch (err) {
+      emailError = err instanceof Error ? err.message : "알 수 없는 오류";
+      console.error(`[입금확인 이메일 발송 실패] ${id}:`, err);
     }
   }
 
-  return NextResponse.json({ success: true });
+  return NextResponse.json({ success: true, emailSent, emailError });
 }
 
 /* ── DELETE: 주문 숨김 처리 (Soft Delete) ── */
