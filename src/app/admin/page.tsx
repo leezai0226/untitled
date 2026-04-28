@@ -123,6 +123,25 @@ export default function AdminDashboardPage() {
             </div>
           </Link>
 
+          {/* 메인 링크 관리 */}
+          <Link href="/admin/links" className="block group">
+            <div className="rounded-2xl border border-border bg-card p-8 transition-all duration-300 hover:-translate-y-1 hover:border-primary/50 hover:shadow-lg hover:shadow-primary/10">
+              <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-primary/10 text-3xl transition-colors group-hover:bg-primary/20">
+                🔗
+              </div>
+              <h2 className="mt-5 text-xl font-bold text-white">
+                메인 링크 관리
+              </h2>
+              <p className="mt-2 text-sm text-sub-text leading-relaxed">
+                메인 페이지 링크 버튼을 추가·수정·순서 변경합니다.
+              </p>
+              <div className="mt-4 flex items-center gap-1 text-sm font-semibold text-primary">
+                관리 페이지로 이동
+                <span className="transition-transform group-hover:translate-x-1">→</span>
+              </div>
+            </div>
+          </Link>
+
           {/* 주문 관리 */}
           <Link href="/admin/orders" className="block group">
             <div className="relative rounded-2xl border border-border bg-card p-8 transition-all duration-300 hover:-translate-y-1 hover:border-primary/50 hover:shadow-lg hover:shadow-primary/10">
