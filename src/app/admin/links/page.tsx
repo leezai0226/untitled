@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import Image from "next/image";
 
 /* ── 콘텐츠 타입 정의 ── */
@@ -69,7 +69,10 @@ export default function AdminLinksPage() {
   /* ── link 타입 폼 ── */
   const [newTitle, setNewTitle] = useState("");
   const [newUrl, setNewUrl] = useState("");
-  const [newThumbnailUrl, setNewThumbnailUrl] = useState(""); // 직접 입력 썸네일 URL
+  const [newThumbnailFile, setNewThumbnailFile] = useState<File | null>(null);
+  const [newThumbnailPreview, setNewThumbnailPreview] = useState<string | null>(null);
+  const [uploadingThumb, setUploadingThumb] = useState(false);
+  const newThumbInputRef = useRef<HTMLInputElement>(null);
 
   /* ── text 타입 폼 ── */
   const [newTextContent, setNewTextContent] = useState("");
@@ -97,7 +100,11 @@ export default function AdminLinksPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const [editUrl, setEditUrl] = useState("");
-  const [editThumbnailUrl, setEditThumbnailUrl] = useState(""); // 직접 입력 썸네일 URL
+  const [editThumbnailFile, setEditThumbnailFile] = useState<File | null>(null);
+  const [editThumbnailPreview, setEditThumbnailPreview] = useState<string | null>(null);
+  const [editThumbnailRemoved, setEditThumbnailRemoved] = useState(false);
+  const [uploadingEditThumb, setUploadingEditThumb] = useState(false);
+  const editThumbInputRef = useRef<HTMLInputElement>(null);
   const [editTextContent, setEditTextContent] = useState("");
   const [editSpacerSize, setEditSpacerSize] = useState<SpacerSize>("medium");
 
@@ -133,7 +140,9 @@ export default function AdminLinksPage() {
     setSelectedType(null);
     setNewTitle("");
     setNewUrl("");
-    setNewThumbnailUrl("");
+    setNewThumbnailFile(null);
+    setNewThumbnailPreview(null);
+    setUploadingThumb(false);
     setNewTextContent("");
     setSpacerSize("medium");
     setGroupTitle("");
@@ -248,11 +257,31 @@ export default function AdminLinksPage() {
     } else {
       /* link 타입 저장 */
       if (!editTitle.trim() || !editUrl.trim()) { setSaving(null); return; }
+      let thumbnailUrl: string | null | undefined = undefined;
+      if (editThumbnailFile) {
+        setUploadingEditThumb(true);
+        const fd = new FormData();
+        fd.append("file", editThumbnailFile);
+        const uploadRes = await fetch("/api/admin/upload-thumbnail", { method: "POST", body: fd });
+        setUploadingEditThumb(false);
+        if (!uploadRes.ok) {
+          const uploadData = await uploadRes.json();
+          alert(uploadData.error || "썸네일 업로드 실패");
+          setSaving(null);
+          return;
+        }
+        const uploadData = await uploadRes.json();
+        thumbnailUrl = uploadData.url as string;
+      } else if (editThumbnailRemoved) {
+        thumbnailUrl = null;
+      } else {
+        thumbnailUrl = (link.metadata?.thumbnail_url as string) ?? undefined;
+      }
       body = {
         id,
         title: editTitle,
         url: editUrl,
-        metadata: { thumbnail_url: editThumbnailUrl.trim() || undefined },
+        metadata: { thumbnail_url: thumbnailUrl ?? undefined },
       };
     }
 
@@ -288,10 +317,21 @@ export default function AdminLinksPage() {
         } else if (link.type === "music") {
           return { ...l, title: editMusicCaption || "음악", url: editMusicUrl, metadata: { music_url: editMusicUrl, caption: editMusicCaption || undefined } };
         } else {
-          return { ...l, title: editTitle, url: editUrl, metadata: { thumbnail_url: editThumbnailUrl.trim() || undefined } };
+          let savedThumbUrl: string | null | undefined = undefined;
+          if (editThumbnailFile) {
+            savedThumbUrl = editThumbnailPreview ?? undefined;
+          } else if (editThumbnailRemoved) {
+            savedThumbUrl = null;
+          } else {
+            savedThumbUrl = (link.metadata?.thumbnail_url as string) ?? undefined;
+          }
+          return { ...l, title: editTitle, url: editUrl, metadata: { thumbnail_url: savedThumbUrl ?? undefined } };
         }
       })
     );
+    setEditThumbnailFile(null);
+    setEditThumbnailPreview(null);
+    setEditThumbnailRemoved(false);
     setEditingId(null);
     setSaving(null);
   };
@@ -318,11 +358,27 @@ export default function AdminLinksPage() {
 
     if (selectedType === "link") {
       if (!newTitle.trim() || !newUrl.trim()) { setAdding(false); return; }
+      let thumbUrl: string | undefined = undefined;
+      if (newThumbnailFile) {
+        setUploadingThumb(true);
+        const fd = new FormData();
+        fd.append("file", newThumbnailFile);
+        const uploadRes = await fetch("/api/admin/upload-thumbnail", { method: "POST", body: fd });
+        setUploadingThumb(false);
+        if (!uploadRes.ok) {
+          const uploadData = await uploadRes.json();
+          alert(uploadData.error || "썸네일 업로드 실패");
+          setAdding(false);
+          return;
+        }
+        const uploadData = await uploadRes.json();
+        thumbUrl = uploadData.url as string;
+      }
       body = {
         type: "link",
         title: newTitle.trim(),
         url: newUrl.trim(),
-        metadata: newThumbnailUrl.trim() ? { thumbnail_url: newThumbnailUrl.trim() } : {},
+        metadata: thumbUrl ? { thumbnail_url: thumbUrl } : {},
       };
     } else if (selectedType === "text") {
       if (!newTextContent.trim()) { setAdding(false); return; }
@@ -413,7 +469,9 @@ export default function AdminLinksPage() {
     setEditingId(link.id);
     setEditTitle(link.title);
     setEditUrl(link.url);
-    setEditThumbnailUrl((link.metadata?.thumbnail_url as string) ?? "");
+    setEditThumbnailFile(null);
+    setEditThumbnailPreview((link.metadata?.thumbnail_url as string) ?? null);
+    setEditThumbnailRemoved(false);
     setEditTextContent((link.metadata?.content as string) ?? "");
     setEditSpacerSize(((link.metadata?.size as SpacerSize) ?? "medium"));
     /* group 수정 초기값 */
@@ -570,33 +628,58 @@ export default function AdminLinksPage() {
               onChange={(e) => setNewUrl(e.target.value)}
               className={inputClass}
             />
-            {/* 썸네일 이미지 URL 직접 입력 */}
+            {/* 썸네일 이미지 파일 업로드 */}
             <div className="space-y-1.5">
-              <label className="text-xs text-sub-text">썸네일 이미지 URL (선택)</label>
+              <label className="text-xs text-sub-text">썸네일 이미지 (선택)</label>
               <input
-                type="text"
-                placeholder="https://example.com/image.jpg"
-                value={newThumbnailUrl}
-                onChange={(e) => setNewThumbnailUrl(e.target.value)}
-                className={inputClass}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                ref={newThumbInputRef}
+                onChange={(e) => {
+                  const file = e.target.files?.[0] ?? null;
+                  setNewThumbnailFile(file);
+                  if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (ev) => setNewThumbnailPreview(ev.target?.result as string);
+                    reader.readAsDataURL(file);
+                  } else {
+                    setNewThumbnailPreview(null);
+                  }
+                  e.target.value = "";
+                }}
               />
-              {/* 썸네일 미리보기 */}
-              {newThumbnailUrl.trim() && (
-                <div className="flex items-center gap-3 mt-1">
-                  <div className="relative h-10 w-10 overflow-hidden rounded-lg border border-border bg-background flex-shrink-0">
-                    <Image src={newThumbnailUrl.trim()} alt="썸네일 미리보기" fill className="object-cover" unoptimized />
-                  </div>
-                  <span className="text-xs text-sub-text">썸네일 미리보기</span>
-                </div>
-              )}
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => newThumbInputRef.current?.click()}
+                  className="rounded-xl border border-border px-4 py-2 text-xs text-sub-text hover:border-primary/50 hover:text-primary transition-colors"
+                >
+                  파일 선택
+                </button>
+                {newThumbnailPreview && (
+                  <>
+                    <div className="relative h-16 w-16 overflow-hidden rounded-lg border border-border bg-background flex-shrink-0">
+                      <Image src={newThumbnailPreview} alt="썸네일 미리보기" fill className="object-cover" unoptimized />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => { setNewThumbnailFile(null); setNewThumbnailPreview(null); }}
+                      className="text-xs text-sub-text hover:text-red-400 transition-colors"
+                    >
+                      제거
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
             <div className="flex gap-2">
               <button
                 onClick={addContent}
-                disabled={adding || !newTitle.trim() || !newUrl.trim()}
+                disabled={adding || uploadingThumb || !newTitle.trim() || !newUrl.trim()}
                 className="flex-1 rounded-xl bg-primary py-2.5 text-sm font-semibold text-background transition-all hover:brightness-110 disabled:opacity-50"
               >
-                {adding ? "추가 중..." : "추가"}
+                {adding || uploadingThumb ? "추가 중..." : "추가"}
               </button>
               <button
                 onClick={() => { setShowTypeModal(false); resetForm(); }}
@@ -1052,35 +1135,63 @@ export default function AdminLinksPage() {
                         placeholder="URL"
                         className="w-full rounded-xl border border-border bg-background px-4 py-2 text-sm text-white focus:border-primary focus:outline-none"
                       />
-                      {/* 썸네일 이미지 URL 직접 입력 */}
+                      {/* 썸네일 이미지 파일 업로드 */}
                       <div className="space-y-1">
-                        <label className="text-xs text-sub-text">썸네일 이미지 URL (선택)</label>
+                        <label className="text-xs text-sub-text">썸네일 이미지 (선택)</label>
                         <input
-                          type="text"
-                          value={editThumbnailUrl}
-                          onChange={(e) => setEditThumbnailUrl(e.target.value)}
-                          placeholder="https://example.com/image.jpg"
-                          className="w-full rounded-xl border border-border bg-background px-4 py-2 text-sm text-white focus:border-primary focus:outline-none"
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          ref={editThumbInputRef}
+                          onChange={(e) => {
+                            const file = e.target.files?.[0] ?? null;
+                            setEditThumbnailFile(file);
+                            setEditThumbnailRemoved(false);
+                            if (file) {
+                              const reader = new FileReader();
+                              reader.onload = (ev) => setEditThumbnailPreview(ev.target?.result as string);
+                              reader.readAsDataURL(file);
+                            }
+                            e.target.value = "";
+                          }}
                         />
-                        {/* 썸네일 미리보기 */}
-                        {editThumbnailUrl.trim() && (
-                          <div className="flex items-center gap-3 mt-1">
-                            <div className="relative h-10 w-10 overflow-hidden rounded-lg border border-border bg-background flex-shrink-0">
-                              <Image src={editThumbnailUrl.trim()} alt="썸네일 미리보기" fill className="object-cover" unoptimized />
-                            </div>
-                            <span className="text-xs text-sub-text">썸네일 미리보기</span>
-                          </div>
-                        )}
+                        <div className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => editThumbInputRef.current?.click()}
+                            className="rounded-xl border border-border px-4 py-2 text-xs text-sub-text hover:border-primary/50 hover:text-primary transition-colors"
+                          >
+                            파일 선택
+                          </button>
+                          {editThumbnailPreview && !editThumbnailRemoved && (
+                            <>
+                              <div className="relative h-16 w-16 overflow-hidden rounded-lg border border-border bg-background flex-shrink-0">
+                                <Image src={editThumbnailPreview} alt="썸네일 미리보기" fill className="object-cover" unoptimized />
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditThumbnailFile(null);
+                                  setEditThumbnailPreview(null);
+                                  setEditThumbnailRemoved(true);
+                                }}
+                                className="text-xs text-sub-text hover:text-red-400 transition-colors"
+                              >
+                                제거
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
                   )}
                   <div className="flex gap-2 pt-1">
                     <button
                       onClick={() => saveEdit(link)}
-                      disabled={saving === link.id}
+                      disabled={saving === link.id || uploadingEditThumb}
                       className="rounded-lg bg-primary px-4 py-1.5 text-xs font-semibold text-background hover:brightness-110 disabled:opacity-50"
                     >
-                      {saving === link.id ? "저장 중..." : "저장"}
+                      {saving === link.id || uploadingEditThumb ? "저장 중..." : "저장"}
                     </button>
                     <button
                       onClick={() => setEditingId(null)}
