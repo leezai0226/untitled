@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({ links: data ?? [] });
 }
 
-/* ── POST: 링크 추가 ── */
+/* ── POST: 링크 추가 (type, metadata 필드 포함) ── */
 export async function POST(request: NextRequest) {
   const blocked = rateLimiter(request);
   if (blocked) return blocked;
@@ -49,11 +49,22 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
 
-  const { title, url, is_active, sort_order } = await request.json();
+  const { title, url, is_active, sort_order, type, metadata } =
+    await request.json();
 
-  if (!title?.trim() || !url?.trim()) {
+  // spacer 타입은 title/url 필수 아님
+  const isSpacer = type === "spacer";
+  const isText = type === "text";
+
+  if (!isSpacer && !isText && (!title?.trim() || !url?.trim())) {
     return NextResponse.json(
       { error: "제목과 URL은 필수입니다." },
+      { status: 400 }
+    );
+  }
+  if (isText && !metadata?.content?.trim()) {
+    return NextResponse.json(
+      { error: "텍스트 내용은 필수입니다." },
       { status: 400 }
     );
   }
@@ -72,9 +83,32 @@ export async function POST(request: NextRequest) {
     order = (last?.sort_order ?? 0) + 1;
   }
 
+  // 콘텐츠 타입별 저장 데이터 구성
+  const insertData: Record<string, unknown> = {
+    is_active: is_active ?? true,
+    sort_order: order,
+    type: type ?? "link",
+    metadata: metadata ?? {},
+  };
+
+  if (isSpacer) {
+    // spacer: 제목/URL을 더미값으로 채움
+    insertData.title = "spacer";
+    insertData.url = "";
+  } else if (isText) {
+    // text: title은 내용 앞 20자로 자동 설정
+    const content = metadata?.content ?? "";
+    insertData.title = title?.trim() || content.slice(0, 20);
+    insertData.url = "";
+  } else {
+    // link: 일반 제목 + URL
+    insertData.title = title.trim();
+    insertData.url = url.trim();
+  }
+
   const { data, error } = await adminClient
     .from("main_links")
-    .insert({ title: title.trim(), url: url.trim(), is_active: is_active ?? true, sort_order: order })
+    .insert(insertData)
     .select()
     .single();
 
@@ -110,13 +144,15 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ success: true });
   }
 
-  // 단건 수정: { id, title?, url?, is_active?, sort_order? }
+  // 단건 수정: { id, title?, url?, is_active?, sort_order?, type?, metadata? }
   const { id, ...fields } = body as {
     id: string;
     title?: string;
     url?: string;
     is_active?: boolean;
     sort_order?: number;
+    type?: string;
+    metadata?: Record<string, unknown>;
   };
 
   if (!id) {
@@ -128,6 +164,8 @@ export async function PUT(request: NextRequest) {
   if (fields.url !== undefined) updateData.url = fields.url.trim();
   if (fields.is_active !== undefined) updateData.is_active = fields.is_active;
   if (fields.sort_order !== undefined) updateData.sort_order = fields.sort_order;
+  if (fields.type !== undefined) updateData.type = fields.type;
+  if (fields.metadata !== undefined) updateData.metadata = fields.metadata;
 
   const { error } = await adminClient
     .from("main_links")
