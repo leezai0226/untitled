@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { verifyAdmin } from "@/utils/verifyAdmin";
 import { createRateLimiter } from "@/utils/rateLimit";
+import { revalidatePath } from "next/cache";
 
 const rateLimiter = createRateLimiter({ windowMs: 60_000, maxRequests: 60 });
 
@@ -116,6 +117,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  revalidatePath("/");
   return NextResponse.json({ link: data });
 }
 
@@ -141,6 +143,7 @@ export async function PUT(request: NextRequest) {
         .update({ sort_order })
         .eq("id", id);
     }
+    revalidatePath("/");
     return NextResponse.json({ success: true });
   }
 
@@ -176,6 +179,7 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  revalidatePath("/");
   return NextResponse.json({ success: true });
 }
 
@@ -206,5 +210,6 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  revalidatePath("/");
   return NextResponse.json({ success: true });
 }

@@ -2,6 +2,9 @@ import { createClient as createServiceClient } from "@supabase/supabase-js";
 import Link from "next/link";
 import Image from "next/image";
 
+// 항상 최신 데이터를 가져오도록 캐시 비활성화
+export const dynamic = "force-dynamic";
+
 /* ── DB에서 가져오는 링크 타입 (type, metadata 포함) ── */
 interface MainLink {
   id: string;
