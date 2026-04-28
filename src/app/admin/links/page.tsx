@@ -1,11 +1,27 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback } from "react";
 import Image from "next/image";
 
 /* ── 콘텐츠 타입 정의 ── */
-type ContentType = "link" | "text" | "spacer";
+type ContentType = "link" | "text" | "spacer" | "group" | "sns" | "video" | "music";
 type SpacerSize = "small" | "medium" | "large";
+
+/* ── SNS 플랫폼 목록 ── */
+const SNS_PLATFORMS: { value: string; label: string; emoji: string }[] = [
+  { value: "instagram", label: "인스타그램", emoji: "📷" },
+  { value: "youtube", label: "유튜브", emoji: "▶️" },
+  { value: "twitter", label: "트위터", emoji: "🐦" },
+  { value: "tiktok", label: "틱톡", emoji: "🎵" },
+  { value: "facebook", label: "페이스북", emoji: "👥" },
+  { value: "linkedin", label: "링크드인", emoji: "💼" },
+];
+
+/* ── 그룹 링크 항목 타입 ── */
+interface GroupItem {
+  label: string;
+  url: string;
+}
 
 interface MainLink {
   id: string;
@@ -26,13 +42,13 @@ const CONTENT_TYPES: {
   supported: boolean;
 }[] = [
   { emoji: "🔗", label: "단일 링크", type: "link", supported: true },
-  { emoji: "🔗🔗", label: "그룹 링크", type: "group", supported: false },
-  { emoji: "📸", label: "SNS 연결", type: "sns", supported: false },
-  { emoji: "▶️", label: "동영상", type: "video", supported: false },
+  { emoji: "🔗🔗", label: "그룹 링크", type: "group", supported: true },
+  { emoji: "📸", label: "SNS 연결", type: "sns", supported: true },
+  { emoji: "▶️", label: "동영상", type: "video", supported: true },
   { emoji: "🅣", label: "텍스트", type: "text", supported: true },
   { emoji: "🖼️", label: "갤러리", type: "gallery", supported: false },
   { emoji: "⬜", label: "여백", type: "spacer", supported: true },
-  { emoji: "🎵", label: "음악", type: "music", supported: false },
+  { emoji: "🎵", label: "음악", type: "music", supported: true },
   { emoji: "📍", label: "지도", type: "map", supported: false },
   { emoji: "📎", label: "파일공유", type: "file", supported: false },
 ];
@@ -53,8 +69,7 @@ export default function AdminLinksPage() {
   /* ── link 타입 폼 ── */
   const [newTitle, setNewTitle] = useState("");
   const [newUrl, setNewUrl] = useState("");
-  const [thumbnail, setThumbnail] = useState<string | null>(null);
-  const [fetchingThumb, setFetchingThumb] = useState(false);
+  const [newThumbnailUrl, setNewThumbnailUrl] = useState(""); // 직접 입력 썸네일 URL
 
   /* ── text 타입 폼 ── */
   const [newTextContent, setNewTextContent] = useState("");
@@ -62,16 +77,45 @@ export default function AdminLinksPage() {
   /* ── spacer 타입 폼 ── */
   const [spacerSize, setSpacerSize] = useState<SpacerSize>("medium");
 
+  /* ── group 타입 폼 ── */
+  const [groupTitle, setGroupTitle] = useState("");
+  const [groupItems, setGroupItems] = useState<GroupItem[]>([{ label: "", url: "" }]);
+
+  /* ── sns 타입 폼 ── */
+  const [snsPlatform, setSnsPlatform] = useState("instagram");
+  const [snsUrl, setSnsUrl] = useState("");
+
+  /* ── video 타입 폼 ── */
+  const [videoUrl, setVideoUrl] = useState("");
+  const [videoCaption, setVideoCaption] = useState("");
+
+  /* ── music 타입 폼 ── */
+  const [musicUrl, setMusicUrl] = useState("");
+  const [musicCaption, setMusicCaption] = useState("");
+
   /* ── 인라인 수정 ── */
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const [editUrl, setEditUrl] = useState("");
+  const [editThumbnailUrl, setEditThumbnailUrl] = useState(""); // 직접 입력 썸네일 URL
   const [editTextContent, setEditTextContent] = useState("");
   const [editSpacerSize, setEditSpacerSize] = useState<SpacerSize>("medium");
-  const [editThumbnail, setEditThumbnail] = useState<string | null>(null);
-  const [fetchingEditThumb, setFetchingEditThumb] = useState(false);
 
-  const urlInputRef = useRef<HTMLInputElement>(null);
+  /* ── 인라인 수정: group ── */
+  const [editGroupTitle, setEditGroupTitle] = useState("");
+  const [editGroupItems, setEditGroupItems] = useState<GroupItem[]>([]);
+
+  /* ── 인라인 수정: sns ── */
+  const [editSnsPlatform, setEditSnsPlatform] = useState("instagram");
+  const [editSnsUrl, setEditSnsUrl] = useState("");
+
+  /* ── 인라인 수정: video ── */
+  const [editVideoUrl, setEditVideoUrl] = useState("");
+  const [editVideoCaption, setEditVideoCaption] = useState("");
+
+  /* ── 인라인 수정: music ── */
+  const [editMusicUrl, setEditMusicUrl] = useState("");
+  const [editMusicCaption, setEditMusicCaption] = useState("");
 
   const fetchLinks = useCallback(async () => {
     const res = await fetch("/api/admin/links");
@@ -89,43 +133,17 @@ export default function AdminLinksPage() {
     setSelectedType(null);
     setNewTitle("");
     setNewUrl("");
-    setThumbnail(null);
+    setNewThumbnailUrl("");
     setNewTextContent("");
     setSpacerSize("medium");
-  };
-
-  /* ── OG 이미지 자동 가져오기 (추가 폼) ── */
-  const fetchThumbnail = async (url: string) => {
-    if (!url.startsWith("http")) return;
-    setFetchingThumb(true);
-    try {
-      const res = await fetch(
-        `/api/og-fetch?url=${encodeURIComponent(url)}`
-      );
-      const data = await res.json();
-      setThumbnail(data.imageUrl ?? null);
-    } catch {
-      setThumbnail(null);
-    } finally {
-      setFetchingThumb(false);
-    }
-  };
-
-  /* ── OG 이미지 자동 가져오기 (수정 폼) ── */
-  const fetchEditThumbnail = async (url: string) => {
-    if (!url.startsWith("http")) return;
-    setFetchingEditThumb(true);
-    try {
-      const res = await fetch(
-        `/api/og-fetch?url=${encodeURIComponent(url)}`
-      );
-      const data = await res.json();
-      setEditThumbnail(data.imageUrl ?? null);
-    } catch {
-      setEditThumbnail(null);
-    } finally {
-      setFetchingEditThumb(false);
-    }
+    setGroupTitle("");
+    setGroupItems([{ label: "", url: "" }]);
+    setSnsPlatform("instagram");
+    setSnsUrl("");
+    setVideoUrl("");
+    setVideoCaption("");
+    setMusicUrl("");
+    setMusicCaption("");
   };
 
   /* ── 순서 변경 ── */
@@ -172,6 +190,7 @@ export default function AdminLinksPage() {
     let body: Record<string, unknown> = { id };
 
     if (link.type === "text") {
+      /* 텍스트 타입 저장 */
       if (!editTextContent.trim()) { setSaving(null); return; }
       body = {
         id,
@@ -180,20 +199,60 @@ export default function AdminLinksPage() {
         metadata: { content: editTextContent },
       };
     } else if (link.type === "spacer") {
+      /* 스페이서 타입 저장 */
       body = {
         id,
         title: "spacer",
         url: "",
         metadata: { size: editSpacerSize },
       };
+    } else if (link.type === "group") {
+      /* 그룹 링크 타입 저장 */
+      if (!editGroupTitle.trim()) { setSaving(null); return; }
+      const validItems = editGroupItems.filter((it) => it.label.trim() && it.url.trim());
+      if (validItems.length === 0) { setSaving(null); return; }
+      body = {
+        id,
+        title: editGroupTitle,
+        url: "",
+        metadata: { items: validItems },
+      };
+    } else if (link.type === "sns") {
+      /* SNS 타입 저장 */
+      if (!editSnsUrl.trim()) { setSaving(null); return; }
+      const platform = SNS_PLATFORMS.find((p) => p.value === editSnsPlatform);
+      body = {
+        id,
+        title: platform?.label ?? editSnsPlatform,
+        url: editSnsUrl,
+        metadata: { platform: editSnsPlatform, url: editSnsUrl },
+      };
+    } else if (link.type === "video") {
+      /* 동영상 타입 저장 */
+      if (!editVideoUrl.trim()) { setSaving(null); return; }
+      body = {
+        id,
+        title: editVideoCaption || "동영상",
+        url: editVideoUrl,
+        metadata: { video_url: editVideoUrl, caption: editVideoCaption || undefined },
+      };
+    } else if (link.type === "music") {
+      /* 음악 타입 저장 */
+      if (!editMusicUrl.trim()) { setSaving(null); return; }
+      body = {
+        id,
+        title: editMusicCaption || "음악",
+        url: editMusicUrl,
+        metadata: { music_url: editMusicUrl, caption: editMusicCaption || undefined },
+      };
     } else {
-      // link 타입
+      /* link 타입 저장 */
       if (!editTitle.trim() || !editUrl.trim()) { setSaving(null); return; }
       body = {
         id,
         title: editTitle,
         url: editUrl,
-        metadata: { thumbnail_url: editThumbnail ?? undefined },
+        metadata: { thumbnail_url: editThumbnailUrl.trim() || undefined },
       };
     }
 
@@ -210,7 +269,7 @@ export default function AdminLinksPage() {
       return;
     }
 
-    // 로컬 상태 업데이트
+    /* 로컬 상태 업데이트 */
     setLinks((prev) =>
       prev.map((l) => {
         if (l.id !== id) return l;
@@ -218,8 +277,18 @@ export default function AdminLinksPage() {
           return { ...l, title: editTextContent.slice(0, 20), metadata: { content: editTextContent } };
         } else if (link.type === "spacer") {
           return { ...l, metadata: { size: editSpacerSize } };
+        } else if (link.type === "group") {
+          const validItems = editGroupItems.filter((it) => it.label.trim() && it.url.trim());
+          return { ...l, title: editGroupTitle, metadata: { items: validItems } };
+        } else if (link.type === "sns") {
+          const platform = SNS_PLATFORMS.find((p) => p.value === editSnsPlatform);
+          return { ...l, title: platform?.label ?? editSnsPlatform, url: editSnsUrl, metadata: { platform: editSnsPlatform, url: editSnsUrl } };
+        } else if (link.type === "video") {
+          return { ...l, title: editVideoCaption || "동영상", url: editVideoUrl, metadata: { video_url: editVideoUrl, caption: editVideoCaption || undefined } };
+        } else if (link.type === "music") {
+          return { ...l, title: editMusicCaption || "음악", url: editMusicUrl, metadata: { music_url: editMusicUrl, caption: editMusicCaption || undefined } };
         } else {
-          return { ...l, title: editTitle, url: editUrl, metadata: { thumbnail_url: editThumbnail ?? undefined } };
+          return { ...l, title: editTitle, url: editUrl, metadata: { thumbnail_url: editThumbnailUrl.trim() || undefined } };
         }
       })
     );
@@ -253,7 +322,7 @@ export default function AdminLinksPage() {
         type: "link",
         title: newTitle.trim(),
         url: newUrl.trim(),
-        metadata: thumbnail ? { thumbnail_url: thumbnail } : {},
+        metadata: newThumbnailUrl.trim() ? { thumbnail_url: newThumbnailUrl.trim() } : {},
       };
     } else if (selectedType === "text") {
       if (!newTextContent.trim()) { setAdding(false); return; }
@@ -270,6 +339,51 @@ export default function AdminLinksPage() {
         url: "",
         metadata: { size: spacerSize },
       };
+    } else if (selectedType === "group") {
+      /* 그룹 링크 추가 */
+      if (!groupTitle.trim()) { setAdding(false); return; }
+      const validItems = groupItems.filter((it) => it.label.trim() && it.url.trim());
+      if (validItems.length === 0) { setAdding(false); return; }
+      body = {
+        type: "group",
+        title: groupTitle.trim(),
+        url: "",
+        metadata: { items: validItems },
+      };
+    } else if (selectedType === "sns") {
+      /* SNS 추가 */
+      if (!snsUrl.trim()) { setAdding(false); return; }
+      const platform = SNS_PLATFORMS.find((p) => p.value === snsPlatform);
+      body = {
+        type: "sns",
+        title: platform?.label ?? snsPlatform,
+        url: snsUrl.trim(),
+        metadata: { platform: snsPlatform, url: snsUrl.trim() },
+      };
+    } else if (selectedType === "video") {
+      /* 동영상 추가 */
+      if (!videoUrl.trim()) { setAdding(false); return; }
+      body = {
+        type: "video",
+        title: videoCaption.trim() || "동영상",
+        url: videoUrl.trim(),
+        metadata: {
+          video_url: videoUrl.trim(),
+          ...(videoCaption.trim() ? { caption: videoCaption.trim() } : {}),
+        },
+      };
+    } else if (selectedType === "music") {
+      /* 음악 추가 */
+      if (!musicUrl.trim()) { setAdding(false); return; }
+      body = {
+        type: "music",
+        title: musicCaption.trim() || "음악",
+        url: musicUrl.trim(),
+        metadata: {
+          music_url: musicUrl.trim(),
+          ...(musicCaption.trim() ? { caption: musicCaption.trim() } : {}),
+        },
+      };
     }
 
     const res = await fetch("/api/admin/links", {
@@ -280,7 +394,6 @@ export default function AdminLinksPage() {
 
     const data = await res.json();
 
-    // 작업 1 버그 수정: res.ok 체크 후 에러 알림
     if (!res.ok) {
       alert(data.error || "추가 실패");
       setAdding(false);
@@ -300,9 +413,25 @@ export default function AdminLinksPage() {
     setEditingId(link.id);
     setEditTitle(link.title);
     setEditUrl(link.url);
+    setEditThumbnailUrl((link.metadata?.thumbnail_url as string) ?? "");
     setEditTextContent((link.metadata?.content as string) ?? "");
     setEditSpacerSize(((link.metadata?.size as SpacerSize) ?? "medium"));
-    setEditThumbnail((link.metadata?.thumbnail_url as string) ?? null);
+    /* group 수정 초기값 */
+    setEditGroupTitle(link.title);
+    setEditGroupItems(
+      Array.isArray(link.metadata?.items)
+        ? (link.metadata.items as GroupItem[])
+        : [{ label: "", url: "" }]
+    );
+    /* sns 수정 초기값 */
+    setEditSnsPlatform((link.metadata?.platform as string) ?? "instagram");
+    setEditSnsUrl((link.metadata?.url as string) ?? link.url);
+    /* video 수정 초기값 */
+    setEditVideoUrl((link.metadata?.video_url as string) ?? link.url);
+    setEditVideoCaption((link.metadata?.caption as string) ?? "");
+    /* music 수정 초기값 */
+    setEditMusicUrl((link.metadata?.music_url as string) ?? link.url);
+    setEditMusicCaption((link.metadata?.caption as string) ?? "");
   };
 
   /* ── 타입별 라벨 ── */
@@ -310,6 +439,46 @@ export default function AdminLinksPage() {
     const found = CONTENT_TYPES.find((t) => t.type === type);
     return found ? `${found.emoji} ${found.label}` : type;
   };
+
+  /* ── 그룹 항목 추가 (추가 폼) ── */
+  const addGroupItem = () => {
+    if (groupItems.length >= 10) return;
+    setGroupItems((prev) => [...prev, { label: "", url: "" }]);
+  };
+
+  /* ── 그룹 항목 제거 (추가 폼) ── */
+  const removeGroupItem = (idx: number) => {
+    setGroupItems((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  /* ── 그룹 항목 수정 (추가 폼) ── */
+  const updateGroupItem = (idx: number, field: keyof GroupItem, value: string) => {
+    setGroupItems((prev) =>
+      prev.map((it, i) => (i === idx ? { ...it, [field]: value } : it))
+    );
+  };
+
+  /* ── 그룹 항목 추가 (수정 폼) ── */
+  const addEditGroupItem = () => {
+    if (editGroupItems.length >= 10) return;
+    setEditGroupItems((prev) => [...prev, { label: "", url: "" }]);
+  };
+
+  /* ── 그룹 항목 제거 (수정 폼) ── */
+  const removeEditGroupItem = (idx: number) => {
+    setEditGroupItems((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  /* ── 그룹 항목 수정 (수정 폼) ── */
+  const updateEditGroupItem = (idx: number, field: keyof GroupItem, value: string) => {
+    setEditGroupItems((prev) =>
+      prev.map((it, i) => (i === idx ? { ...it, [field]: value } : it))
+    );
+  };
+
+  /* ── 공통 인풋 스타일 ── */
+  const inputClass =
+    "w-full rounded-xl border border-border bg-background px-4 py-2.5 text-sm text-white placeholder:text-sub-text/50 focus:border-primary focus:outline-none";
 
   if (loading) {
     return (
@@ -392,41 +561,35 @@ export default function AdminLinksPage() {
               placeholder="버튼 이름 (예: 인스타그램)"
               value={newTitle}
               onChange={(e) => setNewTitle(e.target.value)}
-              className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-sm text-white placeholder:text-sub-text/50 focus:border-primary focus:outline-none"
+              className={inputClass}
             />
-            {/* URL 입력 — blur 시 OG 썸네일 자동 가져오기 */}
             <input
-              ref={urlInputRef}
               type="text"
               placeholder="URL (예: https://instagram.com/...)"
               value={newUrl}
               onChange={(e) => setNewUrl(e.target.value)}
-              onBlur={(e) => fetchThumbnail(e.target.value)}
-              className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-sm text-white placeholder:text-sub-text/50 focus:border-primary focus:outline-none"
+              className={inputClass}
             />
-            {/* 썸네일 미리보기 */}
-            {(fetchingThumb || thumbnail) && (
-              <div className="flex items-center gap-3">
-                <div className="relative h-10 w-10 overflow-hidden rounded-lg border border-border bg-background flex-shrink-0 flex items-center justify-center">
-                  {fetchingThumb ? (
-                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-                  ) : thumbnail ? (
-                    <Image src={thumbnail} alt="썸네일" fill className="object-cover" unoptimized />
-                  ) : null}
+            {/* 썸네일 이미지 URL 직접 입력 */}
+            <div className="space-y-1.5">
+              <label className="text-xs text-sub-text">썸네일 이미지 URL (선택)</label>
+              <input
+                type="text"
+                placeholder="https://example.com/image.jpg"
+                value={newThumbnailUrl}
+                onChange={(e) => setNewThumbnailUrl(e.target.value)}
+                className={inputClass}
+              />
+              {/* 썸네일 미리보기 */}
+              {newThumbnailUrl.trim() && (
+                <div className="flex items-center gap-3 mt-1">
+                  <div className="relative h-10 w-10 overflow-hidden rounded-lg border border-border bg-background flex-shrink-0">
+                    <Image src={newThumbnailUrl.trim()} alt="썸네일 미리보기" fill className="object-cover" unoptimized />
+                  </div>
+                  <span className="text-xs text-sub-text">썸네일 미리보기</span>
                 </div>
-                <span className="text-xs text-sub-text">
-                  {fetchingThumb ? "썸네일 가져오는 중..." : "썸네일 미리보기"}
-                </span>
-                {thumbnail && !fetchingThumb && (
-                  <button
-                    onClick={() => setThumbnail(null)}
-                    className="text-xs text-sub-text hover:text-red-400 transition-colors"
-                  >
-                    제거
-                  </button>
-                )}
-              </div>
-            )}
+              )}
+            </div>
             <div className="flex gap-2">
               <button
                 onClick={addContent}
@@ -522,6 +685,207 @@ export default function AdminLinksPage() {
           </div>
         )}
 
+        {/* ── group 타입 추가 폼 ── */}
+        {showTypeModal && selectedType === "group" && (
+          <div className="mt-6 rounded-xl border border-primary/40 bg-card p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-primary">🔗🔗 그룹 링크 추가</h2>
+              <button onClick={() => setSelectedType(null)} className="text-xs text-sub-text hover:text-white">← 뒤로</button>
+            </div>
+            {/* 그룹 제목 입력 */}
+            <input
+              type="text"
+              placeholder="그룹 제목 (예: SNS 채널)"
+              value={groupTitle}
+              onChange={(e) => setGroupTitle(e.target.value)}
+              className={inputClass}
+            />
+            {/* 링크 항목 목록 */}
+            <div className="space-y-2">
+              {groupItems.map((item, idx) => (
+                <div key={idx} className="flex gap-2 items-start">
+                  <div className="flex-1 space-y-1.5">
+                    <input
+                      type="text"
+                      placeholder={`항목 ${idx + 1} 라벨`}
+                      value={item.label}
+                      onChange={(e) => updateGroupItem(idx, "label", e.target.value)}
+                      className={inputClass}
+                    />
+                    <input
+                      type="text"
+                      placeholder="URL"
+                      value={item.url}
+                      onChange={(e) => updateGroupItem(idx, "url", e.target.value)}
+                      className={inputClass}
+                    />
+                  </div>
+                  {/* 항목 삭제 버튼 (항목이 2개 이상일 때만) */}
+                  {groupItems.length > 1 && (
+                    <button
+                      onClick={() => removeGroupItem(idx)}
+                      className="mt-1 text-sub-text hover:text-red-400 transition-colors text-sm"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+            {/* 항목 추가 버튼 (최대 10개) */}
+            {groupItems.length < 10 && (
+              <button
+                onClick={addGroupItem}
+                className="w-full rounded-xl border border-dashed border-border py-2 text-xs text-sub-text hover:border-primary/50 hover:text-primary transition-colors"
+              >
+                + 항목 추가
+              </button>
+            )}
+            <div className="flex gap-2">
+              <button
+                onClick={addContent}
+                disabled={adding || !groupTitle.trim() || groupItems.every((it) => !it.label.trim() || !it.url.trim())}
+                className="flex-1 rounded-xl bg-primary py-2.5 text-sm font-semibold text-background transition-all hover:brightness-110 disabled:opacity-50"
+              >
+                {adding ? "추가 중..." : "추가"}
+              </button>
+              <button
+                onClick={() => { setShowTypeModal(false); resetForm(); }}
+                className="rounded-xl border border-border px-4 py-2.5 text-sm text-sub-text hover:text-white transition-colors"
+              >
+                취소
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── sns 타입 추가 폼 ── */}
+        {showTypeModal && selectedType === "sns" && (
+          <div className="mt-6 rounded-xl border border-primary/40 bg-card p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-primary">📸 SNS 연결 추가</h2>
+              <button onClick={() => setSelectedType(null)} className="text-xs text-sub-text hover:text-white">← 뒤로</button>
+            </div>
+            {/* 플랫폼 선택 드롭다운 */}
+            <select
+              value={snsPlatform}
+              onChange={(e) => setSnsPlatform(e.target.value)}
+              className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-sm text-white focus:border-primary focus:outline-none"
+            >
+              {SNS_PLATFORMS.map((p) => (
+                <option key={p.value} value={p.value}>
+                  {p.emoji} {p.label}
+                </option>
+              ))}
+            </select>
+            {/* SNS URL 입력 */}
+            <input
+              type="text"
+              placeholder={`${SNS_PLATFORMS.find((p) => p.value === snsPlatform)?.label ?? "SNS"} URL`}
+              value={snsUrl}
+              onChange={(e) => setSnsUrl(e.target.value)}
+              className={inputClass}
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={addContent}
+                disabled={adding || !snsUrl.trim()}
+                className="flex-1 rounded-xl bg-primary py-2.5 text-sm font-semibold text-background transition-all hover:brightness-110 disabled:opacity-50"
+              >
+                {adding ? "추가 중..." : "추가"}
+              </button>
+              <button
+                onClick={() => { setShowTypeModal(false); resetForm(); }}
+                className="rounded-xl border border-border px-4 py-2.5 text-sm text-sub-text hover:text-white transition-colors"
+              >
+                취소
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── video 타입 추가 폼 ── */}
+        {showTypeModal && selectedType === "video" && (
+          <div className="mt-6 rounded-xl border border-primary/40 bg-card p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-primary">▶️ 동영상 추가</h2>
+              <button onClick={() => setSelectedType(null)} className="text-xs text-sub-text hover:text-white">← 뒤로</button>
+            </div>
+            {/* 유튜브 URL 입력 */}
+            <input
+              type="text"
+              placeholder="유튜브 URL (예: https://youtu.be/xxxxx)"
+              value={videoUrl}
+              onChange={(e) => setVideoUrl(e.target.value)}
+              className={inputClass}
+            />
+            {/* 캡션 입력 (선택) */}
+            <input
+              type="text"
+              placeholder="캡션 (선택) — 미입력 시 '동영상'으로 저장"
+              value={videoCaption}
+              onChange={(e) => setVideoCaption(e.target.value)}
+              className={inputClass}
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={addContent}
+                disabled={adding || !videoUrl.trim()}
+                className="flex-1 rounded-xl bg-primary py-2.5 text-sm font-semibold text-background transition-all hover:brightness-110 disabled:opacity-50"
+              >
+                {adding ? "추가 중..." : "추가"}
+              </button>
+              <button
+                onClick={() => { setShowTypeModal(false); resetForm(); }}
+                className="rounded-xl border border-border px-4 py-2.5 text-sm text-sub-text hover:text-white transition-colors"
+              >
+                취소
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── music 타입 추가 폼 ── */}
+        {showTypeModal && selectedType === "music" && (
+          <div className="mt-6 rounded-xl border border-primary/40 bg-card p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-primary">🎵 음악 추가</h2>
+              <button onClick={() => setSelectedType(null)} className="text-xs text-sub-text hover:text-white">← 뒤로</button>
+            </div>
+            {/* 음악 URL 입력 */}
+            <input
+              type="text"
+              placeholder="유튜브 또는 사운드클라우드 URL"
+              value={musicUrl}
+              onChange={(e) => setMusicUrl(e.target.value)}
+              className={inputClass}
+            />
+            {/* 캡션 입력 (선택) */}
+            <input
+              type="text"
+              placeholder="캡션 (선택) — 미입력 시 '음악'으로 저장"
+              value={musicCaption}
+              onChange={(e) => setMusicCaption(e.target.value)}
+              className={inputClass}
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={addContent}
+                disabled={adding || !musicUrl.trim()}
+                className="flex-1 rounded-xl bg-primary py-2.5 text-sm font-semibold text-background transition-all hover:brightness-110 disabled:opacity-50"
+              >
+                {adding ? "추가 중..." : "추가"}
+              </button>
+              <button
+                onClick={() => { setShowTypeModal(false); resetForm(); }}
+                className="rounded-xl border border-border px-4 py-2.5 text-sm text-sub-text hover:text-white transition-colors"
+              >
+                취소
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* ── 링크 목록 ── */}
         <div className="mt-6 space-y-3">
           {links.length === 0 && (
@@ -541,6 +905,7 @@ export default function AdminLinksPage() {
                 /* ── 수정 모드 ── */
                 <div className="p-4 space-y-2">
                   {link.type === "text" ? (
+                    /* 텍스트 타입 수정 */
                     <textarea
                       value={editTextContent}
                       onChange={(e) => setEditTextContent(e.target.value)}
@@ -549,6 +914,7 @@ export default function AdminLinksPage() {
                       placeholder="텍스트 내용"
                     />
                   ) : link.type === "spacer" ? (
+                    /* 스페이서 타입 수정 */
                     <div className="flex gap-2">
                       {(["small", "medium", "large"] as SpacerSize[]).map((size) => (
                         <button
@@ -564,8 +930,114 @@ export default function AdminLinksPage() {
                         </button>
                       ))}
                     </div>
+                  ) : link.type === "group" ? (
+                    /* 그룹 링크 타입 수정 */
+                    <div className="space-y-2">
+                      <input
+                        type="text"
+                        value={editGroupTitle}
+                        onChange={(e) => setEditGroupTitle(e.target.value)}
+                        placeholder="그룹 제목"
+                        className="w-full rounded-xl border border-border bg-background px-4 py-2 text-sm text-white focus:border-primary focus:outline-none"
+                      />
+                      {editGroupItems.map((item, idx) => (
+                        <div key={idx} className="flex gap-2 items-start">
+                          <div className="flex-1 space-y-1">
+                            <input
+                              type="text"
+                              placeholder={`항목 ${idx + 1} 라벨`}
+                              value={item.label}
+                              onChange={(e) => updateEditGroupItem(idx, "label", e.target.value)}
+                              className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-white focus:border-primary focus:outline-none"
+                            />
+                            <input
+                              type="text"
+                              placeholder="URL"
+                              value={item.url}
+                              onChange={(e) => updateEditGroupItem(idx, "url", e.target.value)}
+                              className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-white focus:border-primary focus:outline-none"
+                            />
+                          </div>
+                          {editGroupItems.length > 1 && (
+                            <button
+                              onClick={() => removeEditGroupItem(idx)}
+                              className="mt-1 text-sub-text hover:text-red-400 transition-colors text-sm"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                      {editGroupItems.length < 10 && (
+                        <button
+                          onClick={addEditGroupItem}
+                          className="w-full rounded-xl border border-dashed border-border py-2 text-xs text-sub-text hover:border-primary/50 hover:text-primary transition-colors"
+                        >
+                          + 항목 추가
+                        </button>
+                      )}
+                    </div>
+                  ) : link.type === "sns" ? (
+                    /* SNS 타입 수정 */
+                    <div className="space-y-2">
+                      <select
+                        value={editSnsPlatform}
+                        onChange={(e) => setEditSnsPlatform(e.target.value)}
+                        className="w-full rounded-xl border border-border bg-background px-4 py-2 text-sm text-white focus:border-primary focus:outline-none"
+                      >
+                        {SNS_PLATFORMS.map((p) => (
+                          <option key={p.value} value={p.value}>
+                            {p.emoji} {p.label}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        type="text"
+                        value={editSnsUrl}
+                        onChange={(e) => setEditSnsUrl(e.target.value)}
+                        placeholder="SNS URL"
+                        className="w-full rounded-xl border border-border bg-background px-4 py-2 text-sm text-white focus:border-primary focus:outline-none"
+                      />
+                    </div>
+                  ) : link.type === "video" ? (
+                    /* 동영상 타입 수정 */
+                    <div className="space-y-2">
+                      <input
+                        type="text"
+                        value={editVideoUrl}
+                        onChange={(e) => setEditVideoUrl(e.target.value)}
+                        placeholder="유튜브 URL"
+                        className="w-full rounded-xl border border-border bg-background px-4 py-2 text-sm text-white focus:border-primary focus:outline-none"
+                      />
+                      <input
+                        type="text"
+                        value={editVideoCaption}
+                        onChange={(e) => setEditVideoCaption(e.target.value)}
+                        placeholder="캡션 (선택)"
+                        className="w-full rounded-xl border border-border bg-background px-4 py-2 text-sm text-white focus:border-primary focus:outline-none"
+                      />
+                    </div>
+                  ) : link.type === "music" ? (
+                    /* 음악 타입 수정 */
+                    <div className="space-y-2">
+                      <input
+                        type="text"
+                        value={editMusicUrl}
+                        onChange={(e) => setEditMusicUrl(e.target.value)}
+                        placeholder="유튜브 또는 사운드클라우드 URL"
+                        className="w-full rounded-xl border border-border bg-background px-4 py-2 text-sm text-white focus:border-primary focus:outline-none"
+                      />
+                      <input
+                        type="text"
+                        value={editMusicCaption}
+                        onChange={(e) => setEditMusicCaption(e.target.value)}
+                        placeholder="캡션 (선택)"
+                        className="w-full rounded-xl border border-border bg-background px-4 py-2 text-sm text-white focus:border-primary focus:outline-none"
+                      />
+                    </div>
                   ) : (
-                    <>
+                    /* link 타입 수정 */
+                    <div className="space-y-2">
                       <input
                         type="text"
                         value={editTitle}
@@ -577,36 +1049,32 @@ export default function AdminLinksPage() {
                         type="text"
                         value={editUrl}
                         onChange={(e) => setEditUrl(e.target.value)}
-                        onBlur={(e) => fetchEditThumbnail(e.target.value)}
                         placeholder="URL"
                         className="w-full rounded-xl border border-border bg-background px-4 py-2 text-sm text-white focus:border-primary focus:outline-none"
                       />
-                      {/* 수정 시 썸네일 미리보기 */}
-                      {(fetchingEditThumb || editThumbnail) && (
-                        <div className="flex items-center gap-3">
-                          <div className="relative h-10 w-10 overflow-hidden rounded-lg border border-border bg-background flex-shrink-0 flex items-center justify-center">
-                            {fetchingEditThumb ? (
-                              <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-                            ) : editThumbnail ? (
-                              <Image src={editThumbnail} alt="썸네일" fill className="object-cover" unoptimized />
-                            ) : null}
+                      {/* 썸네일 이미지 URL 직접 입력 */}
+                      <div className="space-y-1">
+                        <label className="text-xs text-sub-text">썸네일 이미지 URL (선택)</label>
+                        <input
+                          type="text"
+                          value={editThumbnailUrl}
+                          onChange={(e) => setEditThumbnailUrl(e.target.value)}
+                          placeholder="https://example.com/image.jpg"
+                          className="w-full rounded-xl border border-border bg-background px-4 py-2 text-sm text-white focus:border-primary focus:outline-none"
+                        />
+                        {/* 썸네일 미리보기 */}
+                        {editThumbnailUrl.trim() && (
+                          <div className="flex items-center gap-3 mt-1">
+                            <div className="relative h-10 w-10 overflow-hidden rounded-lg border border-border bg-background flex-shrink-0">
+                              <Image src={editThumbnailUrl.trim()} alt="썸네일 미리보기" fill className="object-cover" unoptimized />
+                            </div>
+                            <span className="text-xs text-sub-text">썸네일 미리보기</span>
                           </div>
-                          <span className="text-xs text-sub-text">
-                            {fetchingEditThumb ? "썸네일 가져오는 중..." : "썸네일 미리보기"}
-                          </span>
-                          {editThumbnail && !fetchingEditThumb && (
-                            <button
-                              onClick={() => setEditThumbnail(null)}
-                              className="text-xs text-sub-text hover:text-red-400 transition-colors"
-                            >
-                              제거
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </>
+                        )}
+                      </div>
+                    </div>
                   )}
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 pt-1">
                     <button
                       onClick={() => saveEdit(link)}
                       disabled={saving === link.id}
@@ -657,7 +1125,32 @@ export default function AdminLinksPage() {
                       <p className="truncate text-sm text-sub-text">
                         {(link.metadata?.content as string)?.slice(0, 40) ?? link.title}
                       </p>
+                    ) : link.type === "group" ? (
+                      <>
+                        <p className="truncate text-sm font-semibold text-white">{link.title}</p>
+                        <p className="text-xs text-sub-text mt-0.5">
+                          항목 {Array.isArray(link.metadata?.items) ? (link.metadata.items as GroupItem[]).length : 0}개
+                        </p>
+                      </>
+                    ) : link.type === "sns" ? (
+                      <>
+                        <p className="truncate text-sm font-semibold text-white">
+                          {SNS_PLATFORMS.find((p) => p.value === (link.metadata?.platform as string))?.emoji ?? ""} {link.title}
+                        </p>
+                        <p className="truncate text-xs text-sub-text mt-0.5">{link.url}</p>
+                      </>
+                    ) : link.type === "video" ? (
+                      <>
+                        <p className="truncate text-sm font-semibold text-white">{link.title}</p>
+                        <p className="truncate text-xs text-sub-text mt-0.5">{link.url}</p>
+                      </>
+                    ) : link.type === "music" ? (
+                      <>
+                        <p className="truncate text-sm font-semibold text-white">{link.title}</p>
+                        <p className="truncate text-xs text-sub-text mt-0.5">{link.url}</p>
+                      </>
                     ) : (
+                      /* link 타입 기본 표시 */
                       <>
                         <p className="truncate text-sm font-semibold text-white">
                           {link.title}
