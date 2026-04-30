@@ -277,20 +277,24 @@ export async function POST(request: NextRequest) {
     }
 
     /* ── 관리자 알림 (pending 상태) ── */
-    sendPaymentNotification({
-      orderType,
-      customerName: name,
-      customerEmail: guestEmail,
-      customerPhone: phone,
-      totalAmount: expectedAmount,
-      paymentMethod: "bank_transfer",
-      items:
-        orderType === "shop"
-          ? productRows.map((p) => p.title)
-          : undefined,
-      className: orderType === "class" ? className : undefined,
-      schedule: orderType === "class" ? schedule : undefined,
-    }).catch(() => {});
+    try {
+      await sendPaymentNotification({
+        orderType,
+        customerName: name,
+        customerEmail: guestEmail,
+        customerPhone: phone,
+        totalAmount: expectedAmount,
+        paymentMethod: "bank_transfer",
+        items:
+          orderType === "shop"
+            ? productRows.map((p) => p.title)
+            : undefined,
+        className: orderType === "class" ? className : undefined,
+        schedule: orderType === "class" ? schedule : undefined,
+      });
+    } catch (emailErr) {
+      console.error("[guest-order] 관리자 알림 메일 발송 실패:", emailErr);
+    }
 
     return NextResponse.json({
       success: true,
