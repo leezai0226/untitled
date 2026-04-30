@@ -290,18 +290,22 @@ export async function POST(request: NextRequest) {
           ? `전액 환불(₩${refundAmount.toLocaleString("ko-KR")})이 완료되었습니다.`
           : `50% 부분 환불(₩${refundAmount.toLocaleString("ko-KR")})이 완료되었습니다.`;
 
-      // 관리자 환불 알림 이메일 (비동기 — 실패해도 환불 성공)
-      sendRefundNotification({
-        orderType: "class",
-        customerName: order.name || "이름 없음",
-        customerEmail: user.email || "",
-        customerPhone: order.phone || "",
-        refundAmount,
-        refundRate: policy.refundRate,
-        paymentMethod: order.payment_method || "",
-        className: order.class_name || "",
-        schedule: scheduleLabel,
-      }).catch(() => {});
+      // 관리자 환불 알림 이메일
+      try {
+        await sendRefundNotification({
+          orderType: "class",
+          customerName: order.name || "이름 없음",
+          customerEmail: user.email || "",
+          customerPhone: order.phone || "",
+          refundAmount,
+          refundRate: policy.refundRate,
+          paymentMethod: order.payment_method || "",
+          className: order.class_name || "",
+          schedule: scheduleLabel,
+        });
+      } catch (emailErr) {
+        console.error("[refund] 관리자 환불 알림 메일 발송 실패:", emailErr);
+      }
 
       return NextResponse.json({
         success: true,
@@ -504,17 +508,21 @@ export async function POST(request: NextRequest) {
       if (product) productName = product.title;
     }
 
-    // 관리자 환불 알림 이메일 (비동기)
-    sendRefundNotification({
-      orderType: "shop",
-      customerName: order.name || "이름 없음",
-      customerEmail: user.email || "",
-      customerPhone: order.phone || "",
-      refundAmount: orderItem.price,
-      refundRate: 100,
-      paymentMethod: order.payment_method || "",
-      productName,
-    }).catch(() => {});
+    // 관리자 환불 알림 이메일
+    try {
+      await sendRefundNotification({
+        orderType: "shop",
+        customerName: order.name || "이름 없음",
+        customerEmail: user.email || "",
+        customerPhone: order.phone || "",
+        refundAmount: orderItem.price,
+        refundRate: 100,
+        paymentMethod: order.payment_method || "",
+        productName,
+      });
+    } catch (emailErr) {
+      console.error("[refund] 관리자 환불 알림 메일 발송 실패:", emailErr);
+    }
 
     return NextResponse.json({
       success: true,

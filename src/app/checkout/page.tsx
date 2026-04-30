@@ -517,7 +517,7 @@ function CheckoutForm() {
           await supabase.from("order_items").insert(orderItems);
           await supabase.from("cart_items").delete().eq("user_id", user.id);
 
-          fetch("/api/notify", {
+          await fetch("/api/notify", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -557,7 +557,7 @@ function CheckoutForm() {
 
           if (error) throw new Error(`오류가 발생했습니다: ${error.message}`);
 
-          fetch("/api/notify", {
+          await fetch("/api/notify", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
