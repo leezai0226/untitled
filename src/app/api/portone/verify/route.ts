@@ -80,7 +80,9 @@ export async function POST(request: NextRequest) {
     if (isGuest) {
       const guestEmail = ((metadata?.guestEmail as string) || "").trim();
       const guestPhone = ((metadata?.guestPhone as string) || "").trim();
-      if (!guestEmail || !guestPhone) {
+      const isShopOrder = metadata?.orderType === "shop";
+      // 샵 주문은 연락처 불필요 (현금영수증란에만 입력)
+      if (!guestEmail || (!isShopOrder && !guestPhone)) {
         return NextResponse.json(
           {
             error:

@@ -394,31 +394,35 @@ export async function processPortonePayment(
   /* ─── 3. 메일 발송 ─── */
   const customerName = sanitize(metadata?.name as string) || "이름 없음";
 
-  if (isShopOrder) {
-    const productNames = productsForEmail.map((p) => p.productName);
-    sendPaymentNotification({
-      orderType: "shop",
-      customerName,
-      customerEmail: buyerEmail,
-      customerPhone: buyerPhone,
-      totalAmount: payment.amount,
-      paymentMethod: "portone",
-      items:
-        productNames.length > 0
-          ? productNames
-          : [sanitize(metadata?.productName as string) || "디지털 에셋"],
-    }).catch(() => {});
-  } else {
-    sendPaymentNotification({
-      orderType: "class",
-      customerName,
-      customerEmail: buyerEmail,
-      customerPhone: buyerPhone,
-      totalAmount: payment.amount,
-      paymentMethod: "portone",
-      className: createdClassInfo?.className || "",
-      schedule: createdClassInfo?.schedule || "",
-    }).catch(() => {});
+  try {
+    if (isShopOrder) {
+      const productNames = productsForEmail.map((p) => p.productName);
+      await sendPaymentNotification({
+        orderType: "shop",
+        customerName,
+        customerEmail: buyerEmail,
+        customerPhone: buyerPhone,
+        totalAmount: payment.amount,
+        paymentMethod: "portone",
+        items:
+          productNames.length > 0
+            ? productNames
+            : [sanitize(metadata?.productName as string) || "디지털 에셋"],
+      });
+    } else {
+      await sendPaymentNotification({
+        orderType: "class",
+        customerName,
+        customerEmail: buyerEmail,
+        customerPhone: buyerPhone,
+        totalAmount: payment.amount,
+        paymentMethod: "portone",
+        className: createdClassInfo?.className || "",
+        schedule: createdClassInfo?.schedule || "",
+      });
+    }
+  } catch (notifyErr) {
+    console.error("[portone-process] 관리자 알림 메일 발송 실패:", notifyErr);
   }
 
   let emailSent = false;
