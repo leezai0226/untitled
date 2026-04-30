@@ -237,7 +237,7 @@ function CheckoutForm() {
   /* ── 폼 유효성 ── */
   const baseValid =
     form.name.trim() !== "" &&
-    form.phone.trim() !== "" &&
+    (isShopOrder || form.phone.trim() !== "") &&
     (form.paymentMethod === "card" ||
       (form.paymentMethod === "bank_transfer" &&
         form.depositorName.trim() !== ""));
@@ -777,19 +777,21 @@ function CheckoutForm() {
               />
             </div>
 
-            <div className="mt-5">
-              <label className="block text-sm font-medium text-sub-text mb-2">
-                휴대폰 번호 <span className="text-primary">*</span>
-              </label>
-              <input
-                type="tel"
-                value={form.phone}
-                onChange={(e) => update("phone", e.target.value)}
-                placeholder="010-0000-0000"
-                autoComplete="tel"
-                className="w-full rounded-xl border border-border bg-background px-4 py-3 text-base text-white placeholder:text-sub-text/50 focus:border-primary focus:outline-none transition-colors"
-              />
-            </div>
+            {!isShopOrder && (
+              <div className="mt-5">
+                <label className="block text-sm font-medium text-sub-text mb-2">
+                  휴대폰 번호 <span className="text-primary">*</span>
+                </label>
+                <input
+                  type="tel"
+                  value={form.phone}
+                  onChange={(e) => update("phone", e.target.value)}
+                  placeholder="010-0000-0000"
+                  autoComplete="tel"
+                  className="w-full rounded-xl border border-border bg-background px-4 py-3 text-base text-white placeholder:text-sub-text/50 focus:border-primary focus:outline-none transition-colors"
+                />
+              </div>
+            )}
           </div>
         </FadeInSection>
 

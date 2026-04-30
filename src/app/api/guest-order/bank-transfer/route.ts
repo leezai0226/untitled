@@ -73,7 +73,8 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    if (!guestPhone) {
+    // 샵 주문은 연락처 불필요 (현금영수증란에만 입력)
+    if (orderType === "class" && !guestPhone) {
       return NextResponse.json(
         { error: "연락처를 입력해 주세요." },
         { status: 400 }
