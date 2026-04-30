@@ -329,12 +329,8 @@ export default function AdminOrdersPage() {
                       {activeTab === "class" ? "클래스 / 일정" : "주문 유형"}
                     </th>
                     <th className="px-4 py-3 text-xs font-semibold text-sub-text whitespace-nowrap">결제수단</th>
-                    {activeTab === "class" && (
-                      <>
-                        <th className="px-4 py-3 text-xs font-semibold text-sub-text whitespace-nowrap">예금주</th>
-                        <th className="px-4 py-3 text-xs font-semibold text-sub-text whitespace-nowrap">현금영수증</th>
-                      </>
-                    )}
+                    <th className="px-4 py-3 text-xs font-semibold text-sub-text whitespace-nowrap">예금주</th>
+                    <th className="px-4 py-3 text-xs font-semibold text-sub-text whitespace-nowrap">현금영수증</th>
                     <th className="px-4 py-3 text-xs font-semibold text-sub-text whitespace-nowrap">금액</th>
                     <th className="px-4 py-3 text-xs font-semibold text-sub-text whitespace-nowrap">상태</th>
                     <th className="px-4 py-3 text-xs font-semibold text-sub-text whitespace-nowrap">액션</th>
@@ -374,16 +370,16 @@ export default function AdminOrdersPage() {
                       <td className="px-4 py-3 text-sm text-white whitespace-nowrap">
                         {paymentLabel(order.payment_method)}
                       </td>
-                      {activeTab === "class" && (
-                        <>
-                          <td className="px-4 py-3 text-sm text-white whitespace-nowrap">
-                            {order.depositor_name || "—"}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-white whitespace-nowrap">
-                            {order.cash_receipt_number || "—"}
-                          </td>
-                        </>
-                      )}
+                      <td className="px-4 py-3 text-sm text-white whitespace-nowrap">
+                        {order.payment_method === "bank_transfer"
+                          ? order.depositor_name || "—"
+                          : ""}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-white whitespace-nowrap">
+                        {order.payment_method === "bank_transfer"
+                          ? order.cash_receipt_number || "—"
+                          : ""}
+                      </td>
                       <td className="px-4 py-3 font-display text-sm font-semibold text-primary whitespace-nowrap">
                         {formatAmount(order.total_amount)}
                       </td>
@@ -486,7 +482,7 @@ export default function AdminOrdersPage() {
                       <span className="text-sub-text whitespace-nowrap">결제수단</span>
                       <span className="text-white whitespace-nowrap">{paymentLabel(order.payment_method)}</span>
                     </div>
-                    {activeTab === "class" && order.payment_method === "bank_transfer" && (
+                    {order.payment_method === "bank_transfer" && (
                       <>
                         <div className="flex justify-between">
                           <span className="text-sub-text whitespace-nowrap">예금주</span>
