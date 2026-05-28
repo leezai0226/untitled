@@ -364,7 +364,23 @@ function FaqItem({ q, a }: { q: string; a: string }) {
 
 /* ───────────────────────────── 메인 페이지 ───────────────────────────── */
 
+const CLASS_COMING_SOON = true;
+
 export default function ClassPage() {
+  if (CLASS_COMING_SOON) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-background px-6">
+        <div className="text-center">
+          <p className="text-5xl mb-6">🎓</p>
+          <h1 className="text-2xl font-bold text-white mb-3">클래스 준비 중입니다</h1>
+          <p className="text-sm text-sub-text leading-relaxed">
+            곧 새로운 클래스로 돌아올게요.<br />조금만 기다려 주세요!
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   const [activeTab, setActiveTab] = useState(0);
   const [selectedSchedule, setSelectedSchedule] = useState<string | null>(null);
   const [prepOpen, setPrepOpen] = useState(false);
