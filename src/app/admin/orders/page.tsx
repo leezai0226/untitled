@@ -4,6 +4,11 @@ import { useEffect, useState, useCallback } from "react";
 
 /* ─────────────── 타입 ─────────────── */
 
+interface OrderItem {
+  id: string;
+  product: { title: string } | null;
+}
+
 interface Order {
   id: string;
   created_at: string;
@@ -23,6 +28,8 @@ interface Order {
   user_id: string | null;
   guest_email: string | null;
   guest_phone: string | null;
+  // 주문 상품 목록
+  order_items?: OrderItem[];
 }
 
 /** 비회원 주문 표시용 작은 배지 */
@@ -364,7 +371,16 @@ export default function AdminOrdersPage() {
                             <div className="text-xs text-sub-text">{order.schedule || ""}</div>
                           </div>
                         ) : (
-                          <span>디지털 에셋</span>
+                          <div className="flex flex-col gap-0.5">
+                            {order.order_items && order.order_items.length > 0
+                              ? order.order_items.map((item) => (
+                                  <span key={item.id} className="text-xs">
+                                    {item.product?.title || "—"}
+                                  </span>
+                                ))
+                              : <span className="text-sub-text text-xs">—</span>
+                            }
+                          </div>
                         )}
                       </td>
                       <td className="px-4 py-3 text-sm text-white whitespace-nowrap">
@@ -473,9 +489,18 @@ export default function AdminOrdersPage() {
                         </div>
                       </>
                     ) : (
-                      <div className="flex justify-between">
-                        <span className="text-sub-text whitespace-nowrap">유형</span>
-                        <span className="text-white">디지털 에셋</span>
+                      <div className="flex justify-between gap-4">
+                        <span className="text-sub-text whitespace-nowrap">상품</span>
+                        <div className="text-white text-right flex flex-col gap-0.5">
+                          {order.order_items && order.order_items.length > 0
+                            ? order.order_items.map((item) => (
+                                <span key={item.id} className="text-xs">
+                                  {item.product?.title || "—"}
+                                </span>
+                              ))
+                            : <span className="text-xs">—</span>
+                          }
+                        </div>
                       </div>
                     )}
                     <div className="flex justify-between">

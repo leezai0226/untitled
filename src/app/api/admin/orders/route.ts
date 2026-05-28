@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
 
   const { data, error } = await adminClient
     .from("orders")
-    .select("*")
+    .select("*, order_items(id, product:products(title))")
     .neq("status", "hidden")
     .order("created_at", { ascending: false });
 
