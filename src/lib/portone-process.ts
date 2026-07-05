@@ -65,11 +65,56 @@ export async function processPortonePayment(
 
   const orderType = (metadata?.orderType as string) || "shop";
   const isShopOrder = orderType === "shop";
+  const isCourseOrder = orderType === "course";
 
   /* ─── 1. 금액 검증 ─── */
   let expectedAmount = 0;
+  let courseRow: { id: string; title: string; price: number } | null = null;
 
-  if (isShopOrder) {
+  if (isCourseOrder) {
+    /* 온라인 강좌 — 회원 전용 */
+    if (isGuest) {
+      return {
+        ok: false,
+        error: "온라인 강의는 회원만 구매할 수 있습니다.",
+        status: 400,
+      };
+    }
+    const courseId = (metadata?.courseId as string) || "";
+    if (!courseId) {
+      return { ok: false, error: "강좌 정보가 누락되었습니다.", status: 400 };
+    }
+    const { data: course, error: courseError } = await adminClient
+      .from("courses")
+      .select("id, title, price, is_active")
+      .eq("id", courseId)
+      .single();
+    if (courseError || !course) {
+      return { ok: false, error: "강좌를 찾을 수 없습니다.", status: 400 };
+    }
+    if (!course.is_active) {
+      return { ok: false, error: "판매 중이 아닌 강좌입니다.", status: 400 };
+    }
+    // 이미 수강권이 있으면 중복 구매 차단
+    const { data: existingEnrollment } = await adminClient
+      .from("course_enrollments")
+      .select("id, expires_at")
+      .eq("user_id", userId!)
+      .eq("course_id", courseId)
+      .maybeSingle();
+    if (
+      existingEnrollment &&
+      new Date(existingEnrollment.expires_at as string) > new Date()
+    ) {
+      return {
+        ok: false,
+        error: "이미 수강 중인 강좌입니다.",
+        status: 400,
+      };
+    }
+    courseRow = { id: course.id, title: course.title, price: course.price };
+    expectedAmount = course.price ?? 0;
+  } else if (isShopOrder) {
     if (isGuest) {
       const productIds = Array.isArray(metadata?.productIds)
         ? (metadata.productIds as string[])
@@ -193,7 +238,72 @@ export async function processPortonePayment(
   let createdOrderId: string | null = null;
   let createdClassInfo: { className: string; schedule: string } | null = null;
 
-  if (isShopOrder) {
+  if (isCourseOrder && courseRow) {
+    /* 온라인 강좌 주문 (회원 전용) */
+    const orderInsert: Record<string, unknown> = {
+      user_id: userId,
+      order_type: "course",
+      course_id: courseRow.id,
+      class_name: courseRow.title,
+      total_amount: payment.amount,
+      name: sanitize(metadata?.name as string),
+      phone: sanitize(metadata?.phone as string) || "",
+      payment_method: "portone",
+      toss_order_id: payment.merchant_uid,
+      toss_payment_key: payment.imp_uid,
+      status: "completed",
+      paid_at: paidAtIso,
+    };
+
+    const { data: courseOrder, error: orderError } = await adminClient
+      .from("orders")
+      .insert(orderInsert)
+      .select("id")
+      .single();
+
+    if (orderError || !courseOrder) {
+      const code = (orderError as { code?: string } | null)?.code;
+      if (code === "23505") {
+        const { data: existing2 } = await adminClient
+          .from("orders")
+          .select("id")
+          .eq("toss_payment_key", payment.imp_uid)
+          .maybeSingle();
+        if (existing2) {
+          return { ok: true, alreadyProcessed: true, orderId: existing2.id };
+        }
+      }
+      return {
+        ok: false,
+        error: `주문 생성 실패: ${orderError?.message}`,
+        status: 500,
+      };
+    }
+    createdOrderId = courseOrder.id;
+
+    /* 수강권 생성 — 구매일 + 1년 */
+    const expiresAt = new Date();
+    expiresAt.setFullYear(expiresAt.getFullYear() + 1);
+    const { error: enrollError } = await adminClient
+      .from("course_enrollments")
+      .upsert(
+        {
+          user_id: userId,
+          course_id: courseRow.id,
+          order_id: courseOrder.id,
+          expires_at: expiresAt.toISOString(),
+        },
+        { onConflict: "user_id,course_id" }
+      );
+    if (enrollError) {
+      console.error("[수강권 생성 실패]", enrollError.message);
+    }
+
+    createdClassInfo = {
+      className: courseRow.title,
+      schedule: "온라인 강의 (수강기간 1년)",
+    };
+  } else if (isShopOrder) {
     const orderInsert: Record<string, unknown> = {
       user_id: isGuest ? null : userId,
       order_type: "shop",

@@ -117,7 +117,7 @@ export default function AdminOrdersPage() {
   const [deleting, setDeleting] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   // 가장 최근 주문이 있는 탭이 자동으로 활성화됨 (orders 로드 후 1회만)
-  const [activeTab, setActiveTab] = useState<"class" | "shop">("shop");
+  const [activeTab, setActiveTab] = useState<"class" | "shop" | "course">("shop");
   const [tabAutoSelected, setTabAutoSelected] = useState(false);
 
   /* ── 주문 목록 불러오기 (서버 API 경유) ── */
@@ -143,8 +143,16 @@ export default function AdminOrdersPage() {
 
   /* ── 필터링 ── */
   const classOrders = orders.filter((o) => o.order_type === "class");
-  const shopOrders = orders.filter((o) => o.order_type !== "class");
-  const filteredOrders = activeTab === "class" ? classOrders : shopOrders;
+  const courseOrders = orders.filter((o) => o.order_type === "course");
+  const shopOrders = orders.filter(
+    (o) => o.order_type !== "class" && o.order_type !== "course"
+  );
+  const filteredOrders =
+    activeTab === "class"
+      ? classOrders
+      : activeTab === "course"
+        ? courseOrders
+        : shopOrders;
 
   /* ── 첫 로드 시 가장 최근 주문이 있는 탭으로 자동 전환 ── */
   useEffect(() => {
@@ -316,11 +324,21 @@ export default function AdminOrdersPage() {
           >
             🛒 Shop 주문 ({shopOrders.length})
           </button>
+          <button
+            onClick={() => setActiveTab("course")}
+            className={`flex-1 rounded-xl py-3 text-center text-sm font-semibold transition-all duration-200 ${
+              activeTab === "course"
+                ? "bg-primary text-background"
+                : "border border-border bg-card text-white hover:border-primary/50"
+            }`}
+          >
+            🎥 온라인 강의 ({courseOrders.length})
+          </button>
         </div>
 
         {filteredOrders.length === 0 ? (
           <div className="mt-20 text-center text-sub-text">
-            {activeTab === "class" ? "클래스" : "Shop"} 주문 내역이 없습니다.
+            {activeTab === "class" ? "클래스" : activeTab === "course" ? "온라인 강의" : "Shop"} 주문 내역이 없습니다.
           </div>
         ) : (
           <>
@@ -333,7 +351,11 @@ export default function AdminOrdersPage() {
                     <th className="px-4 py-3 text-xs font-semibold text-sub-text whitespace-nowrap">이름</th>
                     <th className="px-4 py-3 text-xs font-semibold text-sub-text whitespace-nowrap">연락처</th>
                     <th className="px-4 py-3 text-xs font-semibold text-sub-text whitespace-nowrap">
-                      {activeTab === "class" ? "클래스 / 일정" : "주문 유형"}
+                      {activeTab === "class"
+                        ? "클래스 / 일정"
+                        : activeTab === "course"
+                          ? "강좌"
+                          : "상품"}
                     </th>
                     <th className="px-4 py-3 text-xs font-semibold text-sub-text whitespace-nowrap">결제수단</th>
                     <th className="px-4 py-3 text-xs font-semibold text-sub-text whitespace-nowrap">예금주</th>
@@ -370,6 +392,8 @@ export default function AdminOrdersPage() {
                             <div>{order.class_name || "—"}</div>
                             <div className="text-xs text-sub-text">{order.schedule || ""}</div>
                           </div>
+                        ) : activeTab === "course" ? (
+                          <span>{order.class_name || "—"}</span>
                         ) : (
                           <div className="flex flex-col gap-0.5">
                             {order.order_items && order.order_items.length > 0
@@ -488,6 +512,11 @@ export default function AdminOrdersPage() {
                           <span className="text-white text-right">{order.schedule || "—"}</span>
                         </div>
                       </>
+                    ) : activeTab === "course" ? (
+                      <div className="flex justify-between gap-4">
+                        <span className="text-sub-text whitespace-nowrap">강좌</span>
+                        <span className="text-white text-right">{order.class_name || "—"}</span>
+                      </div>
                     ) : (
                       <div className="flex justify-between gap-4">
                         <span className="text-sub-text whitespace-nowrap">상품</span>

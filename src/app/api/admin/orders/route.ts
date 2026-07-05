@@ -261,7 +261,7 @@ export async function PUT(request: NextRequest) {
   if (status === "completed") {
     const { data: ord } = await adminClient
       .from("orders")
-      .select("id, order_type, guest_email, name, total_amount, class_name, schedule, payment_method, toss_order_id, status")
+      .select("id, order_type, user_id, course_id, guest_email, name, total_amount, class_name, schedule, payment_method, toss_order_id, status")
       .eq("id", id)
       .single();
     orderForEmail = ord ?? null;
@@ -277,6 +277,37 @@ export async function PUT(request: NextRequest) {
       { error: `주문 상태 변경 실패: ${error.message}` },
       { status: 500 }
     );
+  }
+
+  // 온라인 강좌 주문 입금 확인 → 수강권 생성 (구매일 + 1년)
+  if (
+    status === "completed" &&
+    orderForEmail &&
+    orderForEmail.order_type === "course" &&
+    orderForEmail.status === "pending" &&
+    orderForEmail.user_id &&
+    orderForEmail.course_id
+  ) {
+    const expiresAt = new Date();
+    expiresAt.setFullYear(expiresAt.getFullYear() + 1);
+    const { error: enrollError } = await adminClient
+      .from("course_enrollments")
+      .upsert(
+        {
+          user_id: orderForEmail.user_id as string,
+          course_id: orderForEmail.course_id as string,
+          order_id: id,
+          expires_at: expiresAt.toISOString(),
+        },
+        { onConflict: "user_id,course_id" }
+      );
+    if (enrollError) {
+      console.error("[입금확인 - 수강권 생성 실패]", enrollError.message);
+      return NextResponse.json(
+        { error: `수강권 생성 실패: ${enrollError.message}` },
+        { status: 500 }
+      );
+    }
   }
 
   // 비회원 입금 확인 시 이메일 발송
