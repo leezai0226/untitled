@@ -83,7 +83,7 @@ function WatchPageInner() {
   useEffect(() => {
     const load = async () => {
       try {
-        const res = await fetch(`/api/course/watch?course_id=${courseId}`);
+        const res = await fetch(`/api/class/watch?course_id=${courseId}`);
         const data = await res.json();
         if (!res.ok) throw new Error(data.error);
 
@@ -109,14 +109,14 @@ function WatchPageInner() {
 
         if (!data.enrolled && target && !target.is_preview) {
           alert("수강권이 필요한 강의입니다.");
-          router.replace(`/course/${courseId}`);
+          router.replace(`/class/${courseId}`);
           return;
         }
 
         setCurrentLesson(target ?? null);
       } catch {
         alert("강의 정보를 불러오지 못했습니다.");
-        router.replace(`/course/${courseId}`);
+        router.replace(`/class/${courseId}`);
       } finally {
         setLoading(false);
       }
@@ -130,7 +130,7 @@ function WatchPageInner() {
       const lesson = currentLessonRef.current;
       if (!lesson) return;
       try {
-        await fetch("/api/course/progress", {
+        await fetch("/api/class/progress", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -251,7 +251,7 @@ function WatchPageInner() {
         <div className="flex items-center justify-between gap-4 mb-4">
           <div className="min-w-0">
             <button
-              onClick={() => router.push(`/course/${courseId}`)}
+              onClick={() => router.push(`/class/${courseId}`)}
               className="text-xs text-sub-text hover:text-primary transition-colors"
             >
               ← 강좌 소개로

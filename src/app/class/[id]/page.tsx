@@ -52,7 +52,7 @@ export default function CourseDetailPage() {
 
   const fetchCourse = useCallback(async () => {
     try {
-      const res = await fetch(`/api/course/watch?course_id=${courseId}`);
+      const res = await fetch(`/api/class/watch?course_id=${courseId}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setCourse(data.course);
@@ -62,7 +62,7 @@ export default function CourseDetailPage() {
       setLoggedIn(data.loggedIn);
     } catch {
       alert("강좌 정보를 불러오지 못했습니다.");
-      router.replace("/course");
+      router.replace("/class");
     } finally {
       setLoading(false);
     }
@@ -91,10 +91,10 @@ export default function CourseDetailPage() {
   const handlePurchase = () => {
     if (!loggedIn) {
       alert("온라인 강의는 로그인 후 구매하실 수 있습니다.");
-      router.push(`/login?redirect=/course/${courseId}`);
+      router.push(`/login?redirect=/class/${courseId}`);
       return;
     }
-    router.push(`/course/checkout?course_id=${courseId}`);
+    router.push(`/class/checkout?course_id=${courseId}`);
   };
 
   return (
@@ -134,7 +134,7 @@ export default function CourseDetailPage() {
                 {enrolled ? (
                   <div>
                     <button
-                      onClick={() => router.push(`/course/${courseId}/watch`)}
+                      onClick={() => router.push(`/class/${courseId}/watch`)}
                       className="w-full rounded-xl bg-primary px-6 py-4 text-base font-bold text-background transition-all hover:brightness-110 sm:w-auto sm:px-12"
                     >
                       {completedLessons > 0 ? "이어서 수강하기 →" : "수강 시작하기 →"}
@@ -224,7 +224,7 @@ export default function CourseDetailPage() {
                             {lesson.is_preview && !enrolled && (
                               <button
                                 onClick={() =>
-                                  router.push(`/course/${courseId}/watch?lesson=${lesson.id}`)
+                                  router.push(`/class/${courseId}/watch?lesson=${lesson.id}`)
                                 }
                                 className="flex-shrink-0 rounded-md bg-primary/15 px-2 py-0.5 text-[11px] font-semibold text-primary hover:bg-primary/25 transition-colors"
                               >

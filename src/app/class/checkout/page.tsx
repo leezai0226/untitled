@@ -44,7 +44,7 @@ function CourseCheckoutForm() {
 
       if (!currentUser) {
         alert("온라인 강의는 로그인 후 구매하실 수 있습니다.");
-        router.replace(`/login?redirect=/course/checkout?course_id=${courseId}`);
+        router.replace(`/login?redirect=/class/checkout?course_id=${courseId}`);
         return;
       }
       setUser(currentUser);
@@ -56,7 +56,7 @@ function CourseCheckoutForm() {
 
       if (!courseId) {
         alert("강좌 정보가 없습니다.");
-        router.replace("/course");
+        router.replace("/class");
         return;
       }
 
@@ -69,7 +69,7 @@ function CourseCheckoutForm() {
 
       if (error || !courseData || !courseData.is_active) {
         alert("판매 중인 강좌가 아닙니다.");
-        router.replace("/course");
+        router.replace("/class");
         return;
       }
       setCourse(courseData as CourseRow);
@@ -84,7 +84,7 @@ function CourseCheckoutForm() {
 
       if (enrollment && new Date(enrollment.expires_at) > new Date()) {
         alert("이미 수강 중인 강좌입니다.");
-        router.replace(`/course/${courseId}/watch`);
+        router.replace(`/class/${courseId}/watch`);
         return;
       }
 
@@ -161,7 +161,7 @@ function CourseCheckoutForm() {
 
             if (verifyRes.ok && verifyData.success) {
               alert("결제가 완료되었습니다! 바로 수강하실 수 있습니다.");
-              router.push(`/course/${course.id}/watch`);
+              router.push(`/class/${course.id}/watch`);
             } else {
               alert(verifyData.error || "결제 검증에 실패했습니다.");
             }
@@ -213,7 +213,7 @@ function CourseCheckoutForm() {
       alert(
         "주문이 접수되었습니다!\n입금 확인 후 수강이 활성화됩니다."
       );
-      router.push(`/course/${course.id}`);
+      router.push(`/class/${course.id}`);
     } catch (err) {
       alert(
         `주문 처리 중 오류가 발생했습니다: ${err instanceof Error ? err.message : "알 수 없는 오류"}`
