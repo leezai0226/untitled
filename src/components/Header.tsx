@@ -8,9 +8,8 @@ import { createClient } from "@/utils/supabase/client";
 import type { User } from "@supabase/supabase-js";
 
 const navLinks = [
-  { href: "/class", label: "Class" },
-  { href: "/course", label: "온라인 강의" },
-  { href: "/shop", label: "Shop" },
+  { href: "/course", label: "Class" },
+  { href: "/shop", label: "Store" },
   { href: "/cart", label: "장바구니" },
   { href: "/mypage", label: "마이페이지" },
 ];

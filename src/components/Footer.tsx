@@ -17,7 +17,7 @@ export default function Footer() {
             <h4 className="font-display text-sm font-semibold uppercase tracking-wider text-sub-text">
               Menu
             </h4>
-            <Link href="/class" className="text-sm text-sub-text transition-colors hover:text-primary">
+            <Link href="/course" className="text-sm text-sub-text transition-colors hover:text-primary">
               Class
             </Link>
             <Link href="/shop" className="text-sm text-sub-text transition-colors hover:text-primary">
