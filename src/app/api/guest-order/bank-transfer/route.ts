@@ -3,6 +3,7 @@ import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { sanitize } from "@/utils/sanitize";
 import { createRateLimiter } from "@/utils/rateLimit";
 import { sendPaymentNotification } from "@/utils/email";
+import { isUpcoming } from "@/utils/release";
 
 /**
  * POST /api/guest-order/bank-transfer
@@ -124,7 +125,7 @@ export async function POST(request: NextRequest) {
 
       const { data: products, error: productsError } = await adminClient
         .from("products")
-        .select("id, title, price, remaining_seats")
+        .select("id, title, price, remaining_seats, release_at, release_mode")
         .in("id", productIds);
 
       if (productsError || !products || products.length === 0) {
@@ -135,6 +136,15 @@ export async function POST(request: NextRequest) {
       }
 
       for (const p of products) {
+        if (isUpcoming(p)) {
+          return NextResponse.json(
+            {
+              error: "아직 판매가 시작되지 않은 상품입니다.",
+              code: "NOT_RELEASED",
+            },
+            { status: 400 }
+          );
+        }
         if (p.remaining_seats !== null && p.remaining_seats <= 0) {
           return NextResponse.json(
             {

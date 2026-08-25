@@ -6,6 +6,13 @@ import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 import FadeInSection from "@/components/FadeInSection";
 import { createClient } from "@/utils/supabase/client";
+import {
+  isUpcoming,
+  isHiddenBeforeRelease,
+  msUntilRelease,
+  formatCountdown,
+  formatReleaseDate,
+} from "@/utils/release";
 
 /* ── 타입 ── */
 interface Product {
@@ -16,6 +23,8 @@ interface Product {
   description: string;
   thumbnail_url: string | null;
   sort_order: number;
+  release_at: string | null;
+  release_mode: string | null;
 }
 
 const CATEGORIES = ["전체", "컬러 프리셋", "자막 템플릿", "효과음/BGM", "Free"] as const;
@@ -31,12 +40,19 @@ export default function ShopPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeCategory, setActiveCategory] = useState<Category>("전체");
+  // 카운트다운/자동 오픈을 위해 1초마다 현재 시각 갱신
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     const fetchProducts = async () => {
       const { data, error } = await supabase
         .from("products")
-        .select("id, title, price, category, description, thumbnail_url, sort_order")
+        .select("id, title, price, category, description, thumbnail_url, sort_order, release_at, release_mode")
         .eq("type", "digital_asset")
         .order("sort_order", { ascending: true })
         .order("created_at", { ascending: false });
@@ -51,12 +67,15 @@ export default function ShopPage() {
     fetchProducts();
   }, []);
 
+  // 오픈 전 + hidden 모드 상품은 목록에서 완전히 제외
+  const visible = products.filter((p) => !isHiddenBeforeRelease(p, now));
+
   const filtered =
     activeCategory === "전체"
-      ? products
+      ? visible
       : activeCategory === "Free"
-        ? products.filter((p) => p.price === 0)
-        : products.filter((p) => p.category === activeCategory);
+        ? visible.filter((p) => p.price === 0)
+        : visible.filter((p) => p.category === activeCategory);
 
   return (
     <div className="pt-20">
@@ -112,7 +131,9 @@ export default function ShopPage() {
               transition={{ duration: 0.25, ease: "easeInOut" }}
               className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3"
             >
-              {filtered.map((product, i) => (
+              {filtered.map((product, i) => {
+                const upcoming = isUpcoming(product, now);
+                return (
                 <FadeInSection key={product.id} delay={i * 0.06}>
                   <Link href={`/shop/${product.id}`} className="block">
                     <div className="group cursor-pointer overflow-hidden rounded-xl border border-border bg-card transition-all duration-300 hover:-translate-y-1 hover:border-primary/50 hover:shadow-lg hover:shadow-primary/10">
@@ -130,6 +151,24 @@ export default function ShopPage() {
                           <div className="flex h-full w-full items-center justify-center transition-transform duration-500 group-hover:scale-110">
                             <span className="font-display text-sm text-sub-text">
                               Thumbnail
+                            </span>
+                          </div>
+                        )}
+
+                        {/* 오픈 예정 오버레이 — 카운트다운 */}
+                        {upcoming && (
+                          <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/80 backdrop-blur-[2px]">
+                            <span className="font-display text-[11px] font-bold uppercase tracking-widest text-primary">
+                              Coming Soon
+                            </span>
+                            <span className="mt-1.5 font-display text-xl font-bold tabular-nums text-white">
+                              {formatCountdown(msUntilRelease(product, now))}
+                            </span>
+                            <span className="mt-1 text-[11px] text-sub-text">
+                              {product.release_at
+                                ? formatReleaseDate(product.release_at)
+                                : ""}{" "}
+                              오픈
                             </span>
                           </div>
                         )}
@@ -153,15 +192,22 @@ export default function ShopPage() {
                               {formatPrice(product.price)}
                             </span>
                           )}
-                          <span className="rounded-lg bg-primary/10 p-2 text-primary transition-colors group-hover:bg-primary group-hover:text-background">
-                            →
-                          </span>
+                          {upcoming ? (
+                            <span className="rounded-lg bg-primary/10 px-2.5 py-1.5 text-[11px] font-bold text-primary">
+                              오픈 예정
+                            </span>
+                          ) : (
+                            <span className="rounded-lg bg-primary/10 p-2 text-primary transition-colors group-hover:bg-primary group-hover:text-background">
+                              →
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
                   </Link>
                 </FadeInSection>
-              ))}
+                );
+              })}
             </motion.div>
           </AnimatePresence>
         )}

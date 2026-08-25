@@ -11,6 +11,7 @@
 
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { sanitize } from "@/utils/sanitize";
+import { isUpcoming } from "@/utils/release";
 import {
   sendPaymentNotification,
   sendGuestPurchaseConfirmation,
@@ -124,12 +125,19 @@ export async function processPortonePayment(
       }
       const { data: guestProducts, error: gpError } = await adminClient
         .from("products")
-        .select("id, price, remaining_seats, title")
+        .select("id, price, remaining_seats, title, release_at, release_mode")
         .in("id", productIds);
       if (gpError || !guestProducts || guestProducts.length === 0) {
         return { ok: false, error: "상품 정보 조회에 실패했습니다.", status: 400 };
       }
       for (const p of guestProducts) {
+        if (isUpcoming(p)) {
+          return {
+            ok: false,
+            error: "아직 판매가 시작되지 않은 상품입니다.",
+            status: 400,
+          };
+        }
         if (p.remaining_seats !== null && p.remaining_seats <= 0) {
           return {
             ok: false,
@@ -145,7 +153,7 @@ export async function processPortonePayment(
     } else {
       const { data: cartItems, error: cartError } = await adminClient
         .from("cart_items")
-        .select("product_id, product:products(price, remaining_seats)")
+        .select("product_id, product:products(price, remaining_seats, release_at, release_mode)")
         .eq("user_id", userId!);
       if (cartError || !cartItems || cartItems.length === 0) {
         return {
@@ -158,7 +166,16 @@ export async function processPortonePayment(
         const product = item.product as unknown as {
           price: number;
           remaining_seats: number | null;
+          release_at: string | null;
+          release_mode: string | null;
         } | null;
+        if (product && isUpcoming(product)) {
+          return {
+            ok: false,
+            error: "아직 판매가 시작되지 않은 상품입니다.",
+            status: 400,
+          };
+        }
         if (
           product &&
           product.remaining_seats !== null &&

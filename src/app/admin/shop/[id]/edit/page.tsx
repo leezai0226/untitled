@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { localInputToIso, isoToLocalInput } from "@/utils/release";
 import { useRouter, useParams } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 import { sanitize } from "@/utils/sanitize";
@@ -33,6 +34,8 @@ interface ProductData {
   file_url: string | null;
   sort_order: number;
   remaining_seats: number | null;
+  release_at: string | null;
+  release_mode: string | null;
   faqs: FaqItem[] | null;
   refund_policy: FaqItem[] | null;
   slider_media: SliderMediaItem[] | null;
@@ -55,6 +58,9 @@ export default function AdminShopEditPage() {
   const [sortOrder, setSortOrder] = useState(0);
   const [unlimited, setUnlimited] = useState(true);
   const [remainingSeats, setRemainingSeats] = useState<number | "">("");
+  const [scheduled, setScheduled] = useState(false);
+  const [releaseAt, setReleaseAt] = useState("");
+  const [releaseMode, setReleaseMode] = useState<"teaser" | "hidden">("teaser");
   const [faqs, setFaqs] = useState<FaqItem[]>([]);
   const [refundPolicy, setRefundPolicy] = useState<FaqItem[]>([]);
 
@@ -110,6 +116,9 @@ export default function AdminShopEditPage() {
       setSortOrder(p.sort_order || 0);
       setUnlimited(p.remaining_seats === null);
       setRemainingSeats(p.remaining_seats ?? "");
+      setScheduled(!!p.release_at);
+      setReleaseAt(isoToLocalInput(p.release_at));
+      setReleaseMode(p.release_mode === "hidden" ? "hidden" : "teaser");
       setExistingThumbnail(p.thumbnail_url);
       setExistingDetails(p.detail_images || []);
       setExistingFileUrl(p.file_url);
@@ -326,6 +335,8 @@ export default function AdminShopEditPage() {
           file_url: finalFileUrl,
           sort_order: sortOrder,
           remaining_seats: unlimited ? null : Number(remainingSeats),
+          release_at: scheduled ? localInputToIso(releaseAt) : null,
+          release_mode: releaseMode,
           faqs: faqs.filter((f) => f.q.trim() && f.a.trim()),
           refund_policy: refundPolicy.filter((f) => f.q.trim() && f.a.trim()),
         }),
@@ -478,6 +489,80 @@ export default function AdminShopEditPage() {
           )}
           <p className="mt-1.5 text-xs text-sub-text/60">
             클래스처럼 인원 제한이 있는 상품은 체크를 해제하고 수량을 입력하세요.
+          </p>
+        </div>
+
+        {/* ── 예약 오픈 ── */}
+        <div className="mt-6">
+          <label className="block text-sm font-medium text-sub-text mb-2">
+            판매 시작 시각
+          </label>
+          <div className="flex items-center gap-3 mb-3">
+            <label className="flex cursor-pointer items-center gap-2">
+              <input
+                type="checkbox"
+                checked={scheduled}
+                onChange={(e) => {
+                  setScheduled(e.target.checked);
+                  if (!e.target.checked) setReleaseAt("");
+                }}
+                className="h-4 w-4 rounded border-border bg-card accent-primary"
+              />
+              <span className="text-sm text-white">
+                예약 오픈 (지정한 시각부터 구매 가능)
+              </span>
+            </label>
+          </div>
+
+          {scheduled && (
+            <div className="space-y-3">
+              <input
+                type="datetime-local"
+                value={releaseAt}
+                onChange={(e) => setReleaseAt(e.target.value)}
+                className="w-full rounded-xl border border-border bg-card px-4 py-3 text-base text-white focus:border-primary focus:outline-none transition-colors"
+              />
+
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {[
+                  {
+                    value: "teaser" as const,
+                    label: "티저 공개",
+                    desc: "지금부터 노출 · 카운트다운 표시",
+                  },
+                  {
+                    value: "hidden" as const,
+                    label: "완전 숨김",
+                    desc: "오픈 시각까지 노출 안 함",
+                  },
+                ].map((opt) => (
+                  <label
+                    key={opt.value}
+                    className={`cursor-pointer rounded-xl border p-4 transition-all ${
+                      releaseMode === opt.value
+                        ? "border-primary bg-primary/10"
+                        : "border-border hover:border-primary/50"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="releaseMode"
+                      checked={releaseMode === opt.value}
+                      onChange={() => setReleaseMode(opt.value)}
+                      className="sr-only"
+                    />
+                    <p className="text-sm font-semibold text-white">
+                      {opt.label}
+                    </p>
+                    <p className="mt-1 text-xs text-sub-text">{opt.desc}</p>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <p className="mt-1.5 text-xs text-sub-text/60">
+            체크를 해제하면 즉시 판매로 전환됩니다.
           </p>
         </div>
 

@@ -49,6 +49,11 @@ export async function POST(request: NextRequest) {
         body.remaining_seats === null ? null : Number(body.remaining_seats);
     }
 
+    // 예약 오픈: release_at 이 지나야 구매 가능 (null = 즉시 판매)
+    insertData.release_at = body.release_at || null;
+    insertData.release_mode =
+      body.release_mode === "hidden" ? "hidden" : "teaser";
+
     const { error } = await supabase.from("products").insert(insertData);
 
     if (error) {
@@ -99,6 +104,9 @@ export async function PUT(request: NextRequest) {
     if (fields.detail_images !== undefined) updateData.detail_images = fields.detail_images;
     if (fields.file_url !== undefined) updateData.file_url = fields.file_url;
     if (fields.sort_order !== undefined) updateData.sort_order = Number(fields.sort_order);
+    if (fields.release_at !== undefined) updateData.release_at = fields.release_at || null;
+    if (fields.release_mode !== undefined)
+      updateData.release_mode = fields.release_mode === "hidden" ? "hidden" : "teaser";
     if (fields.faqs !== undefined) updateData.faqs = Array.isArray(fields.faqs) ? fields.faqs : [];
     if (fields.refund_policy !== undefined) updateData.refund_policy = Array.isArray(fields.refund_policy) ? fields.refund_policy : [];
     if (fields.slider_media !== undefined) {

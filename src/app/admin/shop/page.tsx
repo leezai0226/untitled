@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { isUpcoming, formatReleaseDate } from "@/utils/release";
 import Link from "next/link";
 import { createClient } from "@/utils/supabase/client";
 
@@ -20,6 +21,8 @@ interface Product {
   created_at: string;
   remaining_seats: number | null;
   faqs: FaqItem[] | null;
+  release_at: string | null;
+  release_mode: string | null;
 }
 
 function formatDate(iso: string) {
@@ -274,8 +277,14 @@ export default function AdminShopPage() {
                         )}
                       </td>
                       {/* 상품명 */}
-                      <td className="px-4 py-4 text-sm font-medium text-white max-w-[200px] truncate">
-                        {p.title}
+                      <td className="px-4 py-4 text-sm font-medium text-white max-w-[200px]">
+                        <div className="truncate">{p.title}</div>
+                        {isUpcoming(p) && (
+                          <div className="mt-1 inline-flex items-center gap-1 rounded-md bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
+                            {p.release_mode === "hidden" ? "숨김" : "티저"} ·{" "}
+                            {p.release_at ? formatReleaseDate(p.release_at) : ""} 오픈
+                          </div>
+                        )}
                       </td>
                       {/* 카테고리 */}
                       <td className="px-4 py-4 text-xs text-sub-text whitespace-nowrap">
@@ -381,6 +390,12 @@ export default function AdminShopPage() {
                       <h3 className="truncate text-base font-semibold text-white">
                         {p.title}
                       </h3>
+                      {isUpcoming(p) && (
+                        <p className="mt-1 inline-flex items-center gap-1 rounded-md bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
+                          {p.release_mode === "hidden" ? "숨김" : "티저"} ·{" "}
+                          {p.release_at ? formatReleaseDate(p.release_at) : ""} 오픈
+                        </p>
+                      )}
                       <p className="mt-0.5 text-xs text-sub-text">{p.category}</p>
                       <p className="mt-1 font-display text-sm font-semibold text-primary">
                         {formatPrice(p.price)}

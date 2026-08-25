@@ -8,6 +8,12 @@ import { motion, AnimatePresence } from "framer-motion";
 import FadeInSection from "@/components/FadeInSection";
 import MediaSlider, { SliderMediaItem } from "@/components/MediaSlider";
 import { createClient } from "@/utils/supabase/client";
+import {
+  isUpcoming,
+  msUntilRelease,
+  formatCountdown,
+  formatReleaseDate,
+} from "@/utils/release";
 
 /* ── 타입 ── */
 interface FaqItem {
@@ -19,6 +25,8 @@ interface Product {
   id: string;
   title: string;
   price: number;
+  release_at: string | null;
+  release_mode: string | null;
   category: string;
   description: string;
   thumbnail_url: string | null;
@@ -42,12 +50,19 @@ export default function ShopDetailClient({ productId }: { productId: string }) {
   const [loading, setLoading] = useState(true);
   const [cartLoading, setCartLoading] = useState(false);
   const [freeLoading, setFreeLoading] = useState(false);
+  // 카운트다운/자동 오픈용 1초 타이머
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     const fetchProduct = async () => {
       const { data, error } = await supabase
         .from("products")
-        .select("id, title, price, category, description, thumbnail_url, detail_images, file_url, remaining_seats, faqs, refund_policy, slider_media")
+        .select("id, title, price, category, description, thumbnail_url, detail_images, file_url, remaining_seats, faqs, refund_policy, slider_media, release_at, release_mode")
         .eq("id", productId)
         .single();
 
@@ -69,9 +84,31 @@ export default function ShopDetailClient({ productId }: { productId: string }) {
     );
   }
 
+  const upcoming = isUpcoming(product, now);
   const free = product.price === 0;
   const soldOut =
     product.remaining_seats !== null && product.remaining_seats <= 0;
+
+  /* ── 완전 숨김(hidden) 상품은 오픈 전까지 내용을 노출하지 않는다 ── */
+  if (upcoming && product.release_mode === "hidden") {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center px-6 pt-20 text-center">
+        <p className="mb-6 text-5xl">🔒</p>
+        <h1 className="text-2xl font-bold text-white">준비 중입니다</h1>
+        <p className="mt-3 text-sm leading-relaxed text-sub-text">
+          아직 공개되지 않은 상품이에요.
+          <br />
+          오픈되면 스토어에서 만나보실 수 있습니다.
+        </p>
+        <button
+          onClick={() => router.push("/shop")}
+          className="mt-8 rounded-xl border border-border px-6 py-3 text-sm font-semibold text-white transition-colors hover:border-primary hover:text-primary"
+        >
+          스토어 둘러보기
+        </button>
+      </div>
+    );
+  }
 
   /* ── 장바구니 담기 ── */
   const handleAddCart = async () => {
@@ -275,8 +312,35 @@ export default function ShopDetailClient({ productId }: { productId: string }) {
                 {product.description}
               </p>
 
+              {/* 오픈 예정 카운트다운 */}
+              {upcoming && (
+                <div className="mt-6 rounded-xl border border-primary/40 bg-primary/5 p-5 text-center">
+                  <p className="font-display text-[11px] font-bold uppercase tracking-widest text-primary">
+                    Coming Soon
+                  </p>
+                  <p className="mt-2 font-display text-3xl font-bold tabular-nums text-white">
+                    {formatCountdown(msUntilRelease(product, now))}
+                  </p>
+                  <p className="mt-2 text-sm text-sub-text">
+                    {product.release_at
+                      ? formatReleaseDate(product.release_at)
+                      : ""}{" "}
+                    판매 시작
+                  </p>
+                </div>
+              )}
+
               {/* 버튼 */}
-              {soldOut ? (
+              {upcoming ? (
+                <div className="mt-8">
+                  <button
+                    disabled
+                    className="w-full cursor-not-allowed rounded-xl bg-border px-6 py-4 text-lg font-semibold text-sub-text"
+                  >
+                    오픈 전입니다
+                  </button>
+                </div>
+              ) : soldOut ? (
                 <div className="mt-8">
                   <button
                     disabled
