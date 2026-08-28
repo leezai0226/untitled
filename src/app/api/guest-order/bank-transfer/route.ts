@@ -4,11 +4,14 @@ import { sanitize } from "@/utils/sanitize";
 import { createRateLimiter } from "@/utils/rateLimit";
 import { sendPaymentNotification } from "@/utils/email";
 import { isUpcoming } from "@/utils/release";
+import { createClient } from "@/utils/supabase/server";
+import { findApplicableCoupon, redeemCoupon } from "@/lib/coupon";
 
 /**
  * POST /api/guest-order/bank-transfer
  *
- * 비회원 계좌이체 주문을 서버에서 생성합니다.
+ * 계좌이체 주문을 서버에서 생성합니다. (비회원 + 회원 모두)
+ * - 회원: 세션에서 user_id 를 읽어 주문에 연결하고, 금액은 서버가 재계산합니다.
  * - RLS 우회를 위해 Service Role Key를 사용합니다.
  * - status는 "pending"으로 기록되며, 관리자가 입금을 확인 후
  *   수동으로 "completed"로 전환해야 실제 다운로드/수강이 활성화됩니다.
@@ -34,6 +37,8 @@ interface RequestBody {
 
   // 샵 주문
   productIds?: string[];
+  couponCode?: string | null;
+  clearCart?: boolean;
 
   // 클래스 주문
   className?: string;
@@ -52,6 +57,12 @@ export async function POST(request: NextRequest) {
 
     const body = (await request.json()) as RequestBody;
 
+    // 회원 세션 확인 (있으면 회원 주문으로 기록)
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
     /* ── 공통 필드 검증 ── */
     const orderType = body.orderType;
     if (orderType !== "shop" && orderType !== "class") {
@@ -68,14 +79,15 @@ export async function POST(request: NextRequest) {
     const depositorName = sanitize(body.depositorName || "").trim();
     const cashReceiptNumber = sanitize(body.cashReceiptNumber || "").trim();
 
-    if (!guestEmail || !EMAIL_REGEX.test(guestEmail)) {
+    // 비회원만 이메일 필수 (회원은 계정 이메일 사용)
+    if (!user && (!guestEmail || !EMAIL_REGEX.test(guestEmail))) {
       return NextResponse.json(
         { error: "유효한 이메일 주소를 입력해 주세요." },
         { status: 400 }
       );
     }
     // 샵 주문은 연락처 불필요 (현금영수증란에만 입력)
-    if (orderType === "class" && !guestPhone) {
+    if (!user && orderType === "class" && !guestPhone) {
       return NextResponse.json(
         { error: "연락처를 입력해 주세요." },
         { status: 400 }
@@ -109,6 +121,9 @@ export async function POST(request: NextRequest) {
 
     /* ── 주문 유형별 검증 + 금액 재계산 ── */
     let expectedAmount = 0;
+    let appliedCouponId: string | null = null;
+    let appliedCouponCode: string | null = null;
+    let appliedDiscount = 0;
     let productRows: { id: string; title: string; price: number }[] = [];
     let className = "";
     let schedule = "";
@@ -165,6 +180,25 @@ export async function POST(request: NextRequest) {
         title: p.title,
         price: p.price ?? 0,
       }));
+
+      // 쿠폰 적용 (샵 주문만)
+      if (body.couponCode?.trim()) {
+        const result = await findApplicableCoupon(
+          adminClient,
+          body.couponCode,
+          products.map((p) => ({ id: p.id, price: p.price ?? 0 }))
+        );
+        if ("error" in result) {
+          return NextResponse.json(
+            { error: `쿠폰 오류: ${result.error}` },
+            { status: 400 }
+          );
+        }
+        appliedCouponId = result.coupon.id;
+        appliedCouponCode = result.coupon.code;
+        appliedDiscount = result.discountAmount;
+        expectedAmount = Math.max(0, expectedAmount - appliedDiscount);
+      }
     } else {
       // 클래스 주문
       className = sanitize(body.className || "").trim();
@@ -225,11 +259,13 @@ export async function POST(request: NextRequest) {
 
     /* ── Orders INSERT ── */
     const orderData: Record<string, unknown> = {
-      user_id: null,
-      guest_email: guestEmail,
-      guest_phone: guestPhone,
+      user_id: user?.id ?? null,
+      guest_email: user ? null : guestEmail,
+      guest_phone: user ? null : guestPhone,
       order_type: orderType,
       total_amount: expectedAmount,
+      coupon_code: appliedCouponCode,
+      discount_amount: appliedDiscount,
       name,
       phone,
       payment_method: "bank_transfer",
@@ -261,6 +297,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    /* ── 쿠폰 사용 차감 ── */
+    if (appliedCouponId) {
+      const redeemed = await redeemCoupon(adminClient, appliedCouponId);
+      if (!redeemed) {
+        // 주문 접수와 동시에 소진된 희귀 케이스 — 주문 삭제 후 안내
+        await adminClient.from("orders").delete().eq("id", order.id);
+        return NextResponse.json(
+          { error: "쿠폰이 방금 모두 소진되었습니다. 쿠폰 없이 다시 시도해 주세요." },
+          { status: 409 }
+        );
+      }
+    }
+
     /* ── 샵 주문: order_items 생성 (download_token은 DB default로 자동 생성) ── */
     if (orderType === "shop" && productRows.length > 0) {
       const orderItemsInsert = productRows.map((p) => ({
@@ -287,12 +336,17 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    /* ── 회원 장바구니 결제였다면 장바구니 비우기 ── */
+    if (user && body.clearCart) {
+      await adminClient.from("cart_items").delete().eq("user_id", user.id);
+    }
+
     /* ── 관리자 알림 (pending 상태) ── */
     try {
       await sendPaymentNotification({
         orderType,
         customerName: name,
-        customerEmail: guestEmail,
+        customerEmail: user?.email || guestEmail,
         customerPhone: phone,
         totalAmount: expectedAmount,
         paymentMethod: "bank_transfer",

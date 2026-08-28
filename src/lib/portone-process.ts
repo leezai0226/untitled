@@ -12,6 +12,7 @@
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { sanitize } from "@/utils/sanitize";
 import { isUpcoming } from "@/utils/release";
+import { findApplicableCoupon, redeemCoupon } from "@/lib/coupon";
 import {
   sendPaymentNotification,
   sendGuestPurchaseConfirmation,
@@ -71,6 +72,10 @@ export async function processPortonePayment(
   /* ─── 1. 금액 검증 ─── */
   let expectedAmount = 0;
   let courseRow: { id: string; title: string; price: number } | null = null;
+  let shopProductsForCoupon: { id: string; price: number }[] = [];
+  let appliedCouponId: string | null = null;
+  let appliedCouponCode: string | null = null;
+  let appliedDiscount = 0;
 
   if (isCourseOrder) {
     /* 온라인 강좌 — 회원 전용 */
@@ -150,10 +155,14 @@ export async function processPortonePayment(
         (sum, p) => sum + (p.price ?? 0),
         0
       );
+      shopProductsForCoupon = guestProducts.map((p) => ({
+        id: p.id,
+        price: p.price ?? 0,
+      }));
     } else {
       const { data: cartItems, error: cartError } = await adminClient
         .from("cart_items")
-        .select("product_id, product:products(price, remaining_seats, release_at, release_mode)")
+        .select("product_id, product:products(id, price, remaining_seats, release_at, release_mode)")
         .eq("user_id", userId!);
       if (cartError || !cartItems || cartItems.length === 0) {
         return {
@@ -192,6 +201,9 @@ export async function processPortonePayment(
         const product = item.product as unknown as { price: number } | null;
         return sum + (product?.price ?? 0);
       }, 0);
+      shopProductsForCoupon = cartItems
+        .map((item) => item.product as unknown as { id: string; price: number } | null)
+        .filter((p): p is { id: string; price: number } => !!p);
     }
   } else {
     /* 클래스 */
@@ -231,6 +243,23 @@ export async function processPortonePayment(
     } else {
       expectedAmount = 89000;
     }
+  }
+
+  /* ─── 1.5 쿠폰 적용 (샵 주문만) ─── */
+  const couponCode = sanitize((metadata?.couponCode as string) || "").trim();
+  if (isShopOrder && couponCode && shopProductsForCoupon.length > 0) {
+    const result = await findApplicableCoupon(
+      adminClient,
+      couponCode,
+      shopProductsForCoupon
+    );
+    if ("error" in result) {
+      return { ok: false, error: `쿠폰 오류: ${result.error}`, status: 400 };
+    }
+    appliedCouponId = result.coupon.id;
+    appliedCouponCode = result.coupon.code;
+    appliedDiscount = result.discountAmount;
+    expectedAmount = Math.max(0, expectedAmount - appliedDiscount);
   }
 
   if (payment.amount !== expectedAmount) {
@@ -325,6 +354,8 @@ export async function processPortonePayment(
       user_id: isGuest ? null : userId,
       order_type: "shop",
       total_amount: payment.amount,
+      coupon_code: appliedCouponCode,
+      discount_amount: appliedDiscount,
       name: sanitize(metadata?.name as string),
       phone: sanitize(metadata?.phone as string),
       payment_method: "portone",
@@ -364,6 +395,16 @@ export async function processPortonePayment(
       };
     }
     createdOrderId = order.id;
+
+    /* 쿠폰 사용 차감 — 결제는 이미 완료됐으므로 실패해도 주문은 유지 */
+    if (appliedCouponId) {
+      const redeemed = await redeemCoupon(adminClient, appliedCouponId);
+      if (!redeemed) {
+        console.warn(
+          `[쿠폰] 차감 실패(소진 경합 가능) coupon=${appliedCouponCode} order=${order.id}`
+        );
+      }
+    }
 
     /* order_items */
     type ProductLite = {

@@ -30,6 +30,8 @@ interface Order {
   guest_phone: string | null;
   // 주문 상품 목록
   order_items?: OrderItem[];
+  coupon_code?: string | null;
+  discount_amount?: number | null;
 }
 
 /** 비회원 주문 표시용 작은 배지 */
@@ -422,6 +424,12 @@ export default function AdminOrdersPage() {
                       </td>
                       <td className="px-4 py-3 font-display text-sm font-semibold text-primary whitespace-nowrap">
                         {formatAmount(order.total_amount)}
+                        {order.coupon_code && (
+                          <div className="mt-0.5 text-[10px] font-normal text-sub-text">
+                            🎟 {order.coupon_code} (-
+                            {(order.discount_amount ?? 0).toLocaleString("ko-KR")}원)
+                          </div>
+                        )}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">{statusBadge(order.status)}</td>
                       <td className="px-4 py-3 whitespace-nowrap">
@@ -554,6 +562,15 @@ export default function AdminOrdersPage() {
                         {formatAmount(order.total_amount)}
                       </span>
                     </div>
+                    {order.coupon_code && (
+                      <div className="flex justify-between text-xs">
+                        <span className="text-sub-text whitespace-nowrap">쿠폰</span>
+                        <span className="text-white whitespace-nowrap">
+                          {order.coupon_code} (-
+                          {(order.discount_amount ?? 0).toLocaleString("ko-KR")}원)
+                        </span>
+                      </div>
+                    )}
                   </div>
 
                   {/* 상세 토글 (클래스 전용) */}

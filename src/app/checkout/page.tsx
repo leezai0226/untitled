@@ -100,6 +100,53 @@ function CheckoutForm() {
       ? guestProduct?.price ?? 0
       : classPrice;
 
+  /* ── 쿠폰 (샵 주문만) ── */
+  const [couponInput, setCouponInput] = useState("");
+  const [couponChecking, setCouponChecking] = useState(false);
+  const [appliedCoupon, setAppliedCoupon] = useState<{
+    code: string;
+    productTitle: string;
+    discountAmount: number;
+  } | null>(null);
+
+  const discount = appliedCoupon?.discountAmount ?? 0;
+  const finalAmount = Math.max(0, totalAmount - discount);
+
+  const couponProductIds = fromCart
+    ? cartItems.map((c) => c.product?.id).filter((v): v is string => !!v)
+    : fromGuestShop && guestProduct
+      ? [guestProduct.id]
+      : [];
+
+  const applyCoupon = async () => {
+    if (!couponInput.trim() || couponProductIds.length === 0) return;
+    setCouponChecking(true);
+    try {
+      const res = await fetch("/api/coupon/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          code: couponInput,
+          productIds: couponProductIds,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || "쿠폰을 확인할 수 없습니다.");
+        return;
+      }
+      setAppliedCoupon({
+        code: data.code,
+        productTitle: data.productTitle,
+        discountAmount: data.discountAmount,
+      });
+    } catch {
+      alert("쿠폰 확인 중 오류가 발생했습니다.");
+    } finally {
+      setCouponChecking(false);
+    }
+  };
+
   const [form, setForm] = useState<FormData>({
     name: "",
     phone: "",
@@ -294,6 +341,11 @@ function CheckoutForm() {
       phone: buyerPhone,
     };
 
+    // 쿠폰 코드 (샵 주문만) — 서버가 재검증 후 할인 반영
+    if (isShopOrder && appliedCoupon) {
+      metadata.couponCode = appliedCoupon.code;
+    }
+
     if (isGuest) {
       metadata.guestEmail = buyerEmail;
       metadata.guestPhone = buyerPhone;
@@ -348,7 +400,7 @@ function CheckoutForm() {
         pay_method: "card",
         merchant_uid: merchantUid,
         name: orderName,
-        amount: totalAmount,
+        amount: isShopOrder ? finalAmount : totalAmount,
         buyer_email: buyerEmail,
         buyer_name: buyerName,
         buyer_tel: buyerPhone,
@@ -442,7 +494,9 @@ function CheckoutForm() {
             phone: form.phone.trim(),
             depositorName: form.depositorName.trim(),
             cashReceiptNumber: form.cashReceiptNumber.trim() || null,
-            totalAmount,
+            totalAmount: isShopOrder ? finalAmount : totalAmount,
+            couponCode:
+              isShopOrder && appliedCoupon ? appliedCoupon.code : null,
           };
 
           if (fromGuestShop && guestProduct) {
@@ -488,47 +542,30 @@ function CheckoutForm() {
         }
 
         if (fromCart) {
-          const { data: order, error: orderError } = await supabase
-            .from("orders")
-            .insert({
-              user_id: user.id,
-              order_type: "shop",
-              total_amount: totalAmount,
-              name: sanitize(form.name),
-              phone: sanitize(form.phone),
-              payment_method: "bank_transfer",
-              depositor_name: sanitize(form.depositorName),
-              cash_receipt_number: sanitize(form.cashReceiptNumber) || null,
-              status: "pending",
-            })
-            .select("id")
-            .single();
-
-          if (orderError || !order) {
-            throw new Error(`주문 생성 실패: ${orderError?.message}`);
-          }
-
-          const orderItems = cartItems.map((item) => ({
-            order_id: order.id,
-            product_id: item.product.id,
-            price: item.product.price,
-          }));
-
-          await supabase.from("order_items").insert(orderItems);
-          await supabase.from("cart_items").delete().eq("user_id", user.id);
-
-          await fetch("/api/notify", {
+          /* 회원 장바구니 계좌이체 — 서버 API 경유
+           * (금액·쿠폰을 서버가 재계산하고 장바구니 비우기까지 처리) */
+          const res = await fetch("/api/guest-order/bank-transfer", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               orderType: "shop",
-              customerName: form.name.trim(),
-              customerPhone: form.phone.trim(),
-              totalAmount,
-              paymentMethod: "bank_transfer",
-              items: cartItems.map((c) => c.product.title),
+              guestEmail: "",
+              guestPhone: "",
+              name: form.name.trim(),
+              phone: form.phone.trim(),
+              depositorName: form.depositorName.trim(),
+              cashReceiptNumber: form.cashReceiptNumber.trim() || null,
+              totalAmount: finalAmount,
+              productIds: cartItems.map((c) => c.product.id),
+              couponCode: appliedCoupon ? appliedCoupon.code : null,
+              clearCart: true,
             }),
-          }).catch(() => {});
+          });
+
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data.error || "주문 처리에 실패했습니다.");
+          }
 
           alert(
             "주문이 완료되었습니다! 입금 확인 후 마이페이지에서 다운로드하실 수 있습니다."
@@ -652,11 +689,71 @@ function CheckoutForm() {
                     </span>
                   </div>
                 ))}
+                {/* 쿠폰 코드 */}
                 <div className="border-t border-border pt-3">
+                  {appliedCoupon ? (
+                    <div className="flex items-center justify-between rounded-lg bg-primary/10 px-3 py-2.5">
+                      <div className="min-w-0">
+                        <p className="font-display text-sm font-bold tracking-wider text-primary">
+                          {appliedCoupon.code}
+                        </p>
+                        <p className="truncate text-xs text-sub-text">
+                          {appliedCoupon.productTitle} 할인 적용
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAppliedCoupon(null);
+                          setCouponInput("");
+                        }}
+                        className="ml-2 flex-shrink-0 text-xs text-sub-text underline hover:text-white"
+                      >
+                        해제
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={couponInput}
+                        onChange={(e) =>
+                          setCouponInput(e.target.value.toUpperCase())
+                        }
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            applyCoupon();
+                          }
+                        }}
+                        placeholder="쿠폰 코드 입력"
+                        className="min-w-0 flex-1 rounded-lg border border-border bg-background px-3 py-2.5 font-display text-sm tracking-wider text-white placeholder:text-sub-text/50 focus:border-primary focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={applyCoupon}
+                        disabled={couponChecking || !couponInput.trim()}
+                        className="flex-shrink-0 rounded-lg bg-primary/15 px-4 py-2.5 text-sm font-semibold text-primary transition-colors hover:bg-primary/25 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {couponChecking ? "확인 중..." : "적용"}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="border-t border-border pt-3">
+                  {discount > 0 && (
+                    <div className="mb-2 flex items-center justify-between text-sm">
+                      <span className="text-sub-text">쿠폰 할인</span>
+                      <span className="font-semibold text-primary">
+                        -₩{discount.toLocaleString("ko-KR")}
+                      </span>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between">
                     <span className="text-base text-sub-text">총 결제 금액</span>
                     <span className="font-display text-2xl font-bold text-primary">
-                      ₩{totalAmount.toLocaleString("ko-KR")}
+                      ₩{finalAmount.toLocaleString("ko-KR")}
                     </span>
                   </div>
                 </div>
@@ -688,11 +785,71 @@ function CheckoutForm() {
                     </p>
                   </div>
                 </div>
+                {/* 쿠폰 코드 */}
                 <div className="border-t border-border pt-3">
+                  {appliedCoupon ? (
+                    <div className="flex items-center justify-between rounded-lg bg-primary/10 px-3 py-2.5">
+                      <div className="min-w-0">
+                        <p className="font-display text-sm font-bold tracking-wider text-primary">
+                          {appliedCoupon.code}
+                        </p>
+                        <p className="truncate text-xs text-sub-text">
+                          {appliedCoupon.productTitle} 할인 적용
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAppliedCoupon(null);
+                          setCouponInput("");
+                        }}
+                        className="ml-2 flex-shrink-0 text-xs text-sub-text underline hover:text-white"
+                      >
+                        해제
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={couponInput}
+                        onChange={(e) =>
+                          setCouponInput(e.target.value.toUpperCase())
+                        }
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            applyCoupon();
+                          }
+                        }}
+                        placeholder="쿠폰 코드 입력"
+                        className="min-w-0 flex-1 rounded-lg border border-border bg-background px-3 py-2.5 font-display text-sm tracking-wider text-white placeholder:text-sub-text/50 focus:border-primary focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={applyCoupon}
+                        disabled={couponChecking || !couponInput.trim()}
+                        className="flex-shrink-0 rounded-lg bg-primary/15 px-4 py-2.5 text-sm font-semibold text-primary transition-colors hover:bg-primary/25 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {couponChecking ? "확인 중..." : "적용"}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="border-t border-border pt-3">
+                  {discount > 0 && (
+                    <div className="mb-2 flex items-center justify-between text-sm">
+                      <span className="text-sub-text">쿠폰 할인</span>
+                      <span className="font-semibold text-primary">
+                        -₩{discount.toLocaleString("ko-KR")}
+                      </span>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between">
                     <span className="text-base text-sub-text">총 결제 금액</span>
                     <span className="font-display text-2xl font-bold text-primary">
-                      ₩{totalAmount.toLocaleString("ko-KR")}
+                      ₩{finalAmount.toLocaleString("ko-KR")}
                     </span>
                   </div>
                 </div>
@@ -1000,7 +1157,7 @@ function CheckoutForm() {
           >
             {submitting
               ? "결제 처리 중..."
-              : `₩${totalAmount.toLocaleString("ko-KR")} 결제하기`}
+              : `₩${(isShopOrder ? finalAmount : totalAmount).toLocaleString("ko-KR")} 결제하기`}
           </button>
         </FadeInSection>
       </div>

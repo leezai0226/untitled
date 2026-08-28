@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { localInputToIso, isoToLocalInput } from "@/utils/release";
+import CouponEditor, { CouponDraft } from "@/components/admin/CouponEditor";
 import { useRouter, useParams } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 import { sanitize } from "@/utils/sanitize";
@@ -61,6 +62,7 @@ export default function AdminShopEditPage() {
   const [scheduled, setScheduled] = useState(false);
   const [releaseAt, setReleaseAt] = useState("");
   const [releaseMode, setReleaseMode] = useState<"teaser" | "hidden">("teaser");
+  const [coupons, setCoupons] = useState<CouponDraft[]>([]);
   const [faqs, setFaqs] = useState<FaqItem[]>([]);
   const [refundPolicy, setRefundPolicy] = useState<FaqItem[]>([]);
 
@@ -119,6 +121,24 @@ export default function AdminShopEditPage() {
       setScheduled(!!p.release_at);
       setReleaseAt(isoToLocalInput(p.release_at));
       setReleaseMode(p.release_mode === "hidden" ? "hidden" : "teaser");
+
+      // 기존 쿠폰 로드 (관리자 RLS 정책으로 조회 가능)
+      const { data: couponRows } = await supabase
+        .from("product_coupons")
+        .select("id, code, discount_type, discount_value, max_uses, used_count, is_active")
+        .eq("product_id", productId)
+        .order("created_at", { ascending: true });
+      setCoupons(
+        (couponRows ?? []).map((c) => ({
+          id: c.id,
+          code: c.code,
+          discount_type: c.discount_type as "percent" | "fixed",
+          discount_value: c.discount_value,
+          max_uses: c.max_uses ?? "",
+          is_active: c.is_active,
+          used_count: c.used_count,
+        }))
+      );
       setExistingThumbnail(p.thumbnail_url);
       setExistingDetails(p.detail_images || []);
       setExistingFileUrl(p.file_url);
@@ -337,6 +357,16 @@ export default function AdminShopEditPage() {
           remaining_seats: unlimited ? null : Number(remainingSeats),
           release_at: scheduled ? localInputToIso(releaseAt) : null,
           release_mode: releaseMode,
+          coupons: coupons
+            .filter((c) => c.code.trim())
+            .map((c) => ({
+              id: c.id,
+              code: c.code,
+              discount_type: c.discount_type,
+              discount_value: Number(c.discount_value) || 0,
+              max_uses: c.max_uses === "" ? null : Number(c.max_uses),
+              is_active: c.is_active,
+            })),
           faqs: faqs.filter((f) => f.q.trim() && f.a.trim()),
           refund_policy: refundPolicy.filter((f) => f.q.trim() && f.a.trim()),
         }),
@@ -565,6 +595,8 @@ export default function AdminShopEditPage() {
             체크를 해제하면 즉시 판매로 전환됩니다.
           </p>
         </div>
+
+        <CouponEditor coupons={coupons} onChange={setCoupons} />
 
         {/* ── 썸네일 이미지 ── */}
         <div className="mt-6">

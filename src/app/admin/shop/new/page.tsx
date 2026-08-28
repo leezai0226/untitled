@@ -19,6 +19,7 @@
 
 import { useState, useRef } from "react";
 import { localInputToIso } from "@/utils/release";
+import CouponEditor, { CouponDraft } from "@/components/admin/CouponEditor";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 import { sanitize } from "@/utils/sanitize";
@@ -44,6 +45,7 @@ export default function AdminShopNewPage() {
   const [scheduled, setScheduled] = useState(false);
   const [releaseAt, setReleaseAt] = useState("");
   const [releaseMode, setReleaseMode] = useState<"teaser" | "hidden">("teaser");
+  const [coupons, setCoupons] = useState<CouponDraft[]>([]);
   const [faqs, setFaqs] = useState<{ q: string; a: string }[]>([]);
   const [refundPolicy, setRefundPolicy] = useState<{ q: string; a: string }[]>([]);
 
@@ -252,6 +254,15 @@ export default function AdminShopNewPage() {
           remaining_seats: unlimited ? null : Number(remainingSeats),
           release_at: scheduled ? localInputToIso(releaseAt) : null,
           release_mode: releaseMode,
+          coupons: coupons
+            .filter((c) => c.code.trim())
+            .map((c) => ({
+              code: c.code,
+              discount_type: c.discount_type,
+              discount_value: Number(c.discount_value) || 0,
+              max_uses: c.max_uses === "" ? null : Number(c.max_uses),
+              is_active: c.is_active,
+            })),
           faqs: faqs.filter((f) => f.q.trim() && f.a.trim()),
           refund_policy: refundPolicy.filter((f) => f.q.trim() && f.a.trim()),
           thumbnail_url: thumbnailUrl,
@@ -462,6 +473,8 @@ export default function AdminShopNewPage() {
             체크하지 않으면 등록 즉시 판매됩니다.
           </p>
         </div>
+
+        <CouponEditor coupons={coupons} onChange={setCoupons} />
 
         {/* ── 썸네일 이미지 (단일) ── */}
         <div className="mt-6">
