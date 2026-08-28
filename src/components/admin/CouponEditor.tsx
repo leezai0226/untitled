@@ -53,86 +53,86 @@ export default function CouponEditor({ coupons, onChange }: Props) {
             key={c.id ?? `new-${idx}`}
             className="rounded-xl border border-border bg-card p-4"
           >
-            <div className="flex flex-wrap items-center gap-2">
-              {/* 코드 */}
-              <input
-                type="text"
-                value={c.code}
-                onChange={(e) =>
-                  update(idx, { code: e.target.value.toUpperCase() })
-                }
-                placeholder="코드 (예: LAUNCH20)"
-                className="w-40 flex-1 min-w-[130px] rounded-lg border border-border bg-background px-3 py-2.5 font-display text-sm tracking-wider text-white placeholder:text-sub-text/50 focus:border-primary focus:outline-none"
-              />
-
-              {/* 방식 */}
-              <select
-                value={c.discount_type}
-                onChange={(e) =>
-                  update(idx, {
-                    discount_type: e.target.value as "percent" | "fixed",
-                  })
-                }
-                className="rounded-lg border border-border bg-background px-2.5 py-2.5 text-sm text-white focus:border-primary focus:outline-none"
-              >
-                <option value="percent">% 할인</option>
-                <option value="fixed">원 할인</option>
-              </select>
-
-              {/* 값 */}
-              <input
-                type="number"
-                min={1}
-                value={c.discount_value}
-                onChange={(e) =>
-                  update(idx, {
-                    discount_value:
-                      e.target.value === "" ? "" : Number(e.target.value),
-                  })
-                }
-                placeholder={c.discount_type === "percent" ? "20" : "5000"}
-                className="w-24 rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-white placeholder:text-sub-text/50 focus:border-primary focus:outline-none"
-              />
-
-              {/* 수량 */}
-              <input
-                type="number"
-                min={1}
-                value={c.max_uses}
-                onChange={(e) =>
-                  update(idx, {
-                    max_uses:
-                      e.target.value === "" ? "" : Number(e.target.value),
-                  })
-                }
-                placeholder="수량 (비우면 무제한)"
-                className="w-40 rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-white placeholder:text-sub-text/50 focus:border-primary focus:outline-none"
-              />
-
-              {/* 활성 토글 */}
-              <button
-                type="button"
-                onClick={() => update(idx, { is_active: !c.is_active })}
-                className={`relative h-6 w-11 flex-shrink-0 rounded-full transition-colors ${
-                  c.is_active ? "bg-primary" : "bg-border"
-                }`}
-                title={c.is_active ? "사용 가능" : "비활성"}
-              >
-                <span
-                  className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
-                    c.is_active ? "translate-x-5" : "translate-x-0.5"
-                  }`}
+            <div className="space-y-2">
+              {/* 1행: 코드 + 할인 방식 + 할인 값 */}
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={c.code}
+                  onChange={(e) =>
+                    update(idx, { code: e.target.value.toUpperCase() })
+                  }
+                  placeholder="코드 (예: LAUNCH20)"
+                  className="min-w-0 flex-1 rounded-lg border border-border bg-background px-3 py-2.5 font-display text-sm tracking-wider text-white placeholder:text-sub-text/50 focus:border-primary focus:outline-none"
                 />
-              </button>
+                <select
+                  value={c.discount_type}
+                  onChange={(e) =>
+                    update(idx, {
+                      discount_type: e.target.value as "percent" | "fixed",
+                    })
+                  }
+                  className="flex-shrink-0 rounded-lg border border-border bg-background px-2.5 py-2.5 text-sm text-white focus:border-primary focus:outline-none"
+                >
+                  <option value="percent">% 할인</option>
+                  <option value="fixed">원 할인</option>
+                </select>
+                <input
+                  type="number"
+                  min={1}
+                  value={c.discount_value}
+                  onChange={(e) =>
+                    update(idx, {
+                      discount_value:
+                        e.target.value === "" ? "" : Number(e.target.value),
+                    })
+                  }
+                  placeholder={c.discount_type === "percent" ? "20" : "5000"}
+                  className="w-24 flex-shrink-0 rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-white placeholder:text-sub-text/50 focus:border-primary focus:outline-none"
+                />
+              </div>
 
-              {/* 삭제 */}
-              <button
-                type="button"
-                onClick={() => remove(idx)}
-                className="rounded-lg border border-border px-3 py-2 text-xs text-sub-text transition-colors hover:border-red-400/50 hover:text-red-400"
-              >
-                삭제
-              </button>
+              {/* 2행: 수량 + 활성 토글 + 삭제 */}
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  value={c.max_uses}
+                  onChange={(e) =>
+                    update(idx, {
+                      max_uses:
+                        e.target.value === "" ? "" : Number(e.target.value),
+                    })
+                  }
+                  placeholder="수량 (비우면 무제한)"
+                  className="min-w-0 flex-1 rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-white placeholder:text-sub-text/50 focus:border-primary focus:outline-none"
+                />
+                <label className="flex flex-shrink-0 cursor-pointer items-center gap-2">
+                  <span className="text-xs text-sub-text">
+                    {c.is_active ? "사용 가능" : "비활성"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => update(idx, { is_active: !c.is_active })}
+                    className={`relative h-6 w-11 rounded-full transition-colors ${
+                      c.is_active ? "bg-primary" : "bg-border"
+                    }`}
+                  >
+                    <span
+                      className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+                        c.is_active ? "translate-x-5" : "translate-x-0.5"
+                      }`}
+                    />
+                  </button>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => remove(idx)}
+                  className="flex-shrink-0 rounded-lg border border-border px-3 py-2.5 text-xs text-sub-text transition-colors hover:border-red-400/50 hover:text-red-400"
+                >
+                  삭제
+                </button>
+              </div>
             </div>
 
             {/* 사용 현황 (기존 쿠폰만) */}
