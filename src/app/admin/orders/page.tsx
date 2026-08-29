@@ -364,7 +364,7 @@ export default function AdminOrdersPage() {
                     <th className="px-4 py-3 text-xs font-semibold text-sub-text whitespace-nowrap">현금영수증</th>
                     <th className="px-4 py-3 text-xs font-semibold text-sub-text whitespace-nowrap">금액</th>
                     <th className="px-4 py-3 text-xs font-semibold text-sub-text whitespace-nowrap">상태</th>
-                    <th className="px-4 py-3 text-xs font-semibold text-sub-text whitespace-nowrap">액션</th>
+                    <th className="sticky right-0 bg-card px-4 py-3 text-xs font-semibold text-sub-text whitespace-nowrap shadow-[-8px_0_12px_-6px_rgba(0,0,0,0.5)]">액션</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -432,7 +432,7 @@ export default function AdminOrdersPage() {
                         )}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">{statusBadge(order.status)}</td>
-                      <td className="px-4 py-3 whitespace-nowrap">
+                      <td className="sticky right-0 bg-background px-4 py-3 whitespace-nowrap shadow-[-8px_0_12px_-6px_rgba(0,0,0,0.5)]">
                         <div className="flex items-center gap-2">
                           {order.status === "pending" && (
                             <button
