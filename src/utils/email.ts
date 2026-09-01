@@ -102,6 +102,89 @@ export async function sendPaymentNotification(
   }
 }
 
+
+/* ───────────────────────────── 입금 안내 리마인드 ───────────────────────────── */
+
+interface DepositReminder {
+  to: string;
+  customerName: string;
+  totalAmount: number;
+  depositorName: string | null;
+  items: string[];          // 주문 상품/클래스명
+  orderedAt: string;        // ISO
+  deadlineAt: string;       // ISO (자동취소 예정 시각)
+}
+
+/**
+ * 계좌이체 주문 후 12시간이 지나도 입금이 확인되지 않은 고객에게
+ * 입금 안내 메일을 발송합니다.
+ */
+export async function sendDepositReminder(
+  data: DepositReminder
+): Promise<EmailResult> {
+  try {
+    const resend = getResendClient();
+    if (!resend) {
+      return { ok: false, error: "RESEND_API_KEY missing" };
+    }
+
+    const deadline = new Date(data.deadlineAt).toLocaleString("ko-KR", {
+      month: "long",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+
+    const itemsHtml = data.items
+      .map(
+        (name) =>
+          `<tr><td style="padding:8px 12px;border:1px solid #333;color:#ccc;">주문 상품</td><td style="padding:8px 12px;border:1px solid #333;color:#fff;">${name}</td></tr>`
+      )
+      .join("");
+
+    const html = `
+      <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:500px;margin:0 auto;background:#1a1a1a;border-radius:12px;padding:32px;color:#fff;">
+        <h2 style="margin:0 0 8px;color:#c8a2ff;">⏰ 입금을 기다리고 있어요</h2>
+        <p style="margin:0 0 24px;color:#ccc;font-size:14px;line-height:1.6;">
+          ${data.customerName}님, 주문해 주셔서 감사합니다.<br/>
+          아직 입금이 확인되지 않아 안내드립니다.
+        </p>
+        <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
+          ${itemsHtml}
+          <tr><td style="padding:8px 12px;border:1px solid #333;color:#ccc;">입금 금액</td><td style="padding:8px 12px;border:1px solid #333;color:#c8a2ff;font-weight:bold;">₩${data.totalAmount.toLocaleString("ko-KR")}</td></tr>
+          <tr><td style="padding:8px 12px;border:1px solid #333;color:#ccc;">입금 계좌</td><td style="padding:8px 12px;border:1px solid #333;color:#fff;">카카오뱅크 3333-28-7160406 (이영재)</td></tr>
+          ${data.depositorName ? `<tr><td style="padding:8px 12px;border:1px solid #333;color:#ccc;">입금자명</td><td style="padding:8px 12px;border:1px solid #333;color:#fff;">${data.depositorName}</td></tr>` : ""}
+        </table>
+        <p style="margin:0 0 4px;color:#ffb84d;font-size:13px;line-height:1.6;">
+          ⚠️ <b>${deadline}</b>까지 입금이 확인되지 않으면 주문이 자동 취소됩니다.
+        </p>
+        <p style="margin:16px 0 0;color:#888;font-size:12px;">
+          이미 입금하셨다면 확인 후 곧 완료 안내를 보내드릴게요. 이 메일은 무시하셔도 됩니다.
+        </p>
+      </div>
+    `;
+
+    const { data: sent, error: sendError } = await resend.emails.send({
+      from: FROM_EMAIL,
+      to: data.to,
+      subject: `[untitled-studio] 입금 안내 — 주문이 아직 완료되지 않았어요`,
+      html,
+    });
+
+    if (sendError) {
+      console.error("[이메일] 입금 리마인드 발송 실패:", sendError);
+      return { ok: false, error: sendError.message || "Resend error" };
+    }
+    return { ok: true, messageId: sent?.id };
+  } catch (err) {
+    console.error("[이메일] 입금 리마인드 오류:", err);
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "unknown",
+    };
+  }
+}
+
 /* ───────────────────────────── 환불 알림 ───────────────────────────── */
 
 interface RefundNotification {

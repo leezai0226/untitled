@@ -211,7 +211,7 @@ function CourseCheckoutForm() {
       }).catch(() => {});
 
       alert(
-        "주문이 접수되었습니다!\n입금 확인 후 수강이 활성화됩니다."
+        "주문이 접수되었습니다!\n24시간 이내에 입금해 주세요.\n입금 확인 후 수강이 활성화됩니다."
       );
       router.push(`/class/${course.id}`);
     } catch (err) {
