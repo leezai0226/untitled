@@ -1,20 +1,23 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { createClient } from "@/utils/supabase/client";
+import ProductionHeader from "@/components/production/ProductionHeader";
 import type { User } from "@supabase/supabase-js";
 
 const navLinks = [
   { href: "/class", label: "Class" },
   { href: "/shop", label: "Store" },
+  { href: "/production", label: "Production" },
   { href: "/cart", label: "장바구니" },
   { href: "/mypage", label: "마이페이지" },
 ];
 
 export default function Header() {
+  const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -54,6 +57,11 @@ export default function Header() {
     user?.user_metadata?.name ||
     user?.email?.split("@")[0] ||
     "";
+
+  // 프로덕션 섹션은 전용 헤더 사용
+  if (pathname?.startsWith("/production")) {
+    return <ProductionHeader />;
+  }
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-md border-b border-border">

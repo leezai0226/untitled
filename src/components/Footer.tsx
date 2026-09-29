@@ -1,6 +1,12 @@
+"use client";
+
+import { usePathname } from "next/navigation";
 import Link from "next/link";
 
 export default function Footer() {
+  const pathname = usePathname();
+  if (pathname?.startsWith("/production")) return null;
+
   return (
     <footer className="border-t border-border bg-background">
       <div className="mx-auto max-w-7xl px-6 py-12">
