@@ -12,8 +12,8 @@ const navLinks = [
   { href: "/class", label: "Class" },
   { href: "/shop", label: "Store" },
   { href: "/production", label: "Production" },
-  { href: "/cart", label: "장바구니" },
-  { href: "/mypage", label: "마이페이지" },
+  { href: "/cart", label: "Cart" },
+  { href: "/mypage", label: "My Page" },
 ];
 
 export default function Header() {
@@ -94,7 +94,7 @@ export default function Header() {
                 onClick={handleLogout}
                 className="rounded-xl border border-border px-4 py-2 text-sm font-semibold text-sub-text transition-all duration-200 hover:border-primary hover:text-primary"
               >
-                로그아웃
+                Logout
               </button>
             </div>
           ) : (
@@ -102,7 +102,7 @@ export default function Header() {
               href="/login"
               className="rounded-xl bg-primary px-5 py-2 text-sm font-semibold text-background transition-all duration-200 hover:brightness-110 hover:-translate-y-0.5"
             >
-              로그인
+              Login
             </Link>
           )}
         </nav>
@@ -158,7 +158,7 @@ export default function Header() {
                     onClick={handleLogout}
                     className="rounded-xl border border-border px-5 py-3 text-center font-semibold text-sub-text transition-all duration-200 hover:border-primary hover:text-primary"
                   >
-                    로그아웃
+                    Logout
                   </button>
                 </>
               ) : (
@@ -167,7 +167,7 @@ export default function Header() {
                   onClick={() => setIsOpen(false)}
                   className="mt-2 rounded-xl bg-primary px-5 py-3 text-center font-semibold text-background transition-all duration-200 hover:brightness-110"
                 >
-                  로그인
+                  Login
                 </Link>
               )}
             </div>
