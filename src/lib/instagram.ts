@@ -126,45 +126,35 @@ export async function subscribeWebhooks(
 }
 
 /* ── 댓글 비공개 답장 (Private Reply) ──
- * 텍스트 전용 또는 버튼 카드(generic template) 1건 발송.
+ * 텍스트 전용 또는 버튼 템플릿(본문 최대 640자 + 버튼 1~2개) 1건 발송.
+ * Meta 정책상 댓글 1개당 비공개 답장은 1회만 가능.
  */
 export async function sendPrivateReply(input: {
   igUserId: string;
   token: string;
   commentId: string;
-  text?: string;
-  card?: {
-    title: string;       // 최대 80자
-    subtitle?: string;   // 최대 80자
-    buttonLabel: string;
-    buttonUrl: string;
-  };
+  text: string;
+  buttons?: { label: string; url: string }[];
 }): Promise<void> {
-  const message: Record<string, unknown> = input.card
-    ? {
-        attachment: {
-          type: "template",
-          payload: {
-            template_type: "generic",
-            elements: [
-              {
-                title: input.card.title.slice(0, 80),
-                ...(input.card.subtitle
-                  ? { subtitle: input.card.subtitle.slice(0, 80) }
-                  : {}),
-                buttons: [
-                  {
-                    type: "web_url",
-                    url: input.card.buttonUrl,
-                    title: input.card.buttonLabel.slice(0, 20),
-                  },
-                ],
-              },
-            ],
+  const buttons = (input.buttons ?? []).filter((b) => b.label && b.url);
+
+  const message: Record<string, unknown> =
+    buttons.length > 0
+      ? {
+          attachment: {
+            type: "template",
+            payload: {
+              template_type: "button",
+              text: input.text.slice(0, 640),
+              buttons: buttons.slice(0, 3).map((b) => ({
+                type: "web_url",
+                url: b.url,
+                title: b.label.slice(0, 20),
+              })),
+            },
           },
-        },
-      }
-    : { text: input.text ?? "" };
+        }
+      : { text: input.text.slice(0, 1000) };
 
   const res = await fetch(`${GRAPH}/${input.igUserId}/messages`, {
     method: "POST",
@@ -182,6 +172,47 @@ export async function sendPrivateReply(input: {
     throw new Error(
       `DM 발송 실패: ${data.error?.message || JSON.stringify(data)}`
     );
+  }
+}
+
+/* ── 댓글에 공개 답글 달기 ── */
+export async function replyToComment(
+  commentId: string,
+  token: string,
+  message: string
+): Promise<void> {
+  const res = await fetch(`${GRAPH}/${commentId}/replies`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message: message.slice(0, 300), access_token: token }),
+  });
+  const data = await res.json();
+  if (!res.ok || data.error) {
+    throw new Error(
+      `공개 답글 실패: ${data.error?.message || JSON.stringify(data)}`
+    );
+  }
+}
+
+/* ── 댓글 작성자의 팔로우 여부 조회 ──
+ * 조회 실패 시 null (판단 불가 → 발송 쪽으로 fail-open 권장)
+ */
+export async function checkUserFollowsBusiness(
+  igScopedUserId: string,
+  token: string
+): Promise<boolean | null> {
+  try {
+    const res = await fetch(
+      `${GRAPH}/${igScopedUserId}?fields=is_user_follow_business&access_token=${encodeURIComponent(token)}`
+    );
+    const data = await res.json();
+    if (!res.ok || data.error) return null;
+    if (typeof data.is_user_follow_business === "boolean") {
+      return data.is_user_follow_business;
+    }
+    return null;
+  } catch {
+    return null;
   }
 }
 

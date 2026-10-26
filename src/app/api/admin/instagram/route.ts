@@ -77,16 +77,33 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
-  const hasButton = !!(body.button_label?.trim() && body.button_url?.trim());
-  if (!hasButton && !body.dm_text?.trim()) {
+  if (!body.dm_text?.trim()) {
     return NextResponse.json(
-      { error: "DM 내용 또는 버튼 설정이 필요합니다." },
+      { error: "DM 내용을 입력해 주세요." },
       { status: 400 }
     );
   }
-  if (hasButton && !body.card_title?.trim()) {
+  const hasButton = !!(body.button_label?.trim() && body.button_url?.trim());
+  const hasButton2 = !!(body.button2_label?.trim() && body.button2_url?.trim());
+  if (
+    (body.button_label?.trim() || body.button_url?.trim()) && !hasButton
+  ) {
     return NextResponse.json(
-      { error: "버튼 DM은 카드 제목이 필요합니다." },
+      { error: "버튼 1의 문구와 링크를 모두 입력해 주세요." },
+      { status: 400 }
+    );
+  }
+  if (
+    (body.button2_label?.trim() || body.button2_url?.trim()) && !hasButton2
+  ) {
+    return NextResponse.json(
+      { error: "버튼 2의 문구와 링크를 모두 입력해 주세요." },
+      { status: 400 }
+    );
+  }
+  if (body.reply_enabled && !body.reply_text?.trim()) {
+    return NextResponse.json(
+      { error: "자동 댓글 내용을 입력해 주세요." },
       { status: 400 }
     );
   }
@@ -100,11 +117,14 @@ export async function POST(request: NextRequest) {
       media_thumbnail_url: body.media_thumbnail_url || null,
       media_caption: sanitize(body.media_caption || "") || null,
       keywords,
-      dm_text: sanitize(body.dm_text || ""),
-      card_title: sanitize(body.card_title || "") || null,
-      card_subtitle: sanitize(body.card_subtitle || "") || null,
+      dm_text: body.dm_text,
       button_label: hasButton ? sanitize(body.button_label) : null,
       button_url: hasButton ? body.button_url.trim() : null,
+      button2_label: hasButton2 ? sanitize(body.button2_label) : null,
+      button2_url: hasButton2 ? body.button2_url.trim() : null,
+      reply_enabled: !!body.reply_enabled,
+      reply_text: sanitize(body.reply_text || "") || null,
+      follower_only: !!body.follower_only,
       is_active: body.is_active ?? true,
     })
     .select()
@@ -142,15 +162,21 @@ export async function PUT(request: NextRequest) {
     updateData.keywords = (body.keywords as string[])
       .map((k) => sanitize(k).trim())
       .filter(Boolean);
-  if (body.dm_text !== undefined) updateData.dm_text = sanitize(body.dm_text);
-  if (body.card_title !== undefined)
-    updateData.card_title = sanitize(body.card_title || "") || null;
-  if (body.card_subtitle !== undefined)
-    updateData.card_subtitle = sanitize(body.card_subtitle || "") || null;
+  if (body.dm_text !== undefined) updateData.dm_text = body.dm_text;
   if (body.button_label !== undefined)
     updateData.button_label = sanitize(body.button_label || "") || null;
   if (body.button_url !== undefined)
     updateData.button_url = (body.button_url || "").trim() || null;
+  if (body.button2_label !== undefined)
+    updateData.button2_label = sanitize(body.button2_label || "") || null;
+  if (body.button2_url !== undefined)
+    updateData.button2_url = (body.button2_url || "").trim() || null;
+  if (body.reply_enabled !== undefined)
+    updateData.reply_enabled = !!body.reply_enabled;
+  if (body.reply_text !== undefined)
+    updateData.reply_text = sanitize(body.reply_text || "") || null;
+  if (body.follower_only !== undefined)
+    updateData.follower_only = !!body.follower_only;
   if (body.is_active !== undefined) updateData.is_active = body.is_active;
 
   const adminClient = getAdminClient();

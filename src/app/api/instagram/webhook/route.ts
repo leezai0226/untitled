@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
-import { sendPrivateReply, getInstagramEnv } from "@/lib/instagram";
+import {
+  sendPrivateReply,
+  replyToComment,
+  checkUserFollowsBusiness,
+  getInstagramEnv,
+} from "@/lib/instagram";
 
 /**
  * Instagram Webhooks — 댓글 이벤트 수신 → 키워드 매칭 → 비공개 답장 DM
@@ -79,6 +84,7 @@ export async function POST(request: NextRequest) {
           igUserId,
           commentId,
           commentText,
+          fromId,
           fromUsername,
           mediaId,
         });
@@ -98,6 +104,7 @@ async function processComment(
     igUserId: string;
     commentId: string;
     commentText: string;
+    fromId: string;
     fromUsername: string;
     mediaId: string;
   }
@@ -143,23 +150,43 @@ async function processComment(
     });
   if (dedupeError) return; // 이미 처리된 댓글 (unique 충돌)
 
-  // DM 발송
+  // 팔로워 조건 — 확인 불가 시에는 발송(fail-open)
+  if (matched.follower_only && input.fromId) {
+    const follows = await checkUserFollowsBusiness(
+      input.fromId,
+      account.access_token
+    );
+    if (follows === false) {
+      await adminClient
+        .from("instagram_dm_logs")
+        .update({ status: "skipped", error: "팔로워 아님 (조건 미충족)" })
+        .eq("comment_id", input.commentId);
+      return;
+    }
+  }
+
+  // DM 발송 — 버튼이 있으면 버튼 템플릿(본문+버튼 1~2개), 없으면 텍스트
   try {
-    const hasButton = !!(matched.button_label && matched.button_url);
+    const buttons: { label: string; url: string }[] = [];
+    if (matched.button_label && matched.button_url) {
+      buttons.push({ label: matched.button_label, url: matched.button_url });
+    }
+    if (matched.button2_label && matched.button2_url) {
+      buttons.push({ label: matched.button2_label, url: matched.button2_url });
+    }
+
+    // 구버전 규칙 호환: dm_text 없으면 카드 제목/설명을 본문으로
+    const text =
+      matched.dm_text ||
+      [matched.card_title, matched.card_subtitle].filter(Boolean).join("\n") ||
+      "안내";
+
     await sendPrivateReply({
       igUserId: account.ig_user_id,
       token: account.access_token,
       commentId: input.commentId,
-      ...(hasButton
-        ? {
-            card: {
-              title: matched.card_title || matched.dm_text || "안내",
-              subtitle: matched.card_subtitle || undefined,
-              buttonLabel: matched.button_label,
-              buttonUrl: matched.button_url,
-            },
-          }
-        : { text: matched.dm_text }),
+      text,
+      buttons,
     });
 
     await adminClient
@@ -170,6 +197,19 @@ async function processComment(
       .from("instagram_dm_rules")
       .update({ sent_count: (matched.sent_count ?? 0) + 1 })
       .eq("id", matched.id);
+
+    // 자동 공개 답글 (DM 성공 시에만, 실패해도 로그만)
+    if (matched.reply_enabled && matched.reply_text) {
+      try {
+        await replyToComment(
+          input.commentId,
+          account.access_token,
+          matched.reply_text
+        );
+      } catch (replyErr) {
+        console.error("[instagram/webhook] 공개 답글 실패:", replyErr);
+      }
+    }
   } catch (err) {
     console.error("[instagram/webhook] DM 발송 실패:", err);
     await adminClient
