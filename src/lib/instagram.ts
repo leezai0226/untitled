@@ -116,7 +116,7 @@ export async function subscribeWebhooks(
   token: string
 ): Promise<void> {
   const res = await fetch(
-    `${GRAPH}/${igUserId}/subscribed_apps?subscribed_fields=comments&access_token=${encodeURIComponent(token)}`,
+    `${GRAPH}/${igUserId}/subscribed_apps?subscribed_fields=comments,messages,messaging_postbacks&access_token=${encodeURIComponent(token)}`,
     { method: "POST" }
   );
   const data = await res.json();
@@ -129,43 +129,50 @@ export async function subscribeWebhooks(
  * 텍스트 전용 또는 버튼 템플릿(본문 최대 640자 + 버튼 1~2개) 1건 발송.
  * Meta 정책상 댓글 1개당 비공개 답장은 1회만 가능.
  */
-export async function sendPrivateReply(input: {
-  igUserId: string;
-  token: string;
-  commentId: string;
-  text: string;
-  buttons?: { label: string; url: string }[];
-}): Promise<void> {
-  const buttons = (input.buttons ?? []).filter((b) => b.label && b.url);
+export interface DmButton {
+  label: string;
+  url?: string;      // web_url 버튼
+  payload?: string;  // postback 버튼 (버튼 클릭 웹훅 수신)
+}
 
-  const message: Record<string, unknown> =
-    buttons.length > 0
-      ? {
-          attachment: {
-            type: "template",
-            payload: {
-              template_type: "button",
-              text: input.text.slice(0, 640),
-              buttons: buttons.slice(0, 3).map((b) => ({
-                type: "web_url",
-                url: b.url,
+function buildMessage(
+  text: string,
+  buttons?: DmButton[]
+): Record<string, unknown> {
+  const valid = (buttons ?? []).filter((b) => b.label && (b.url || b.payload));
+  if (valid.length === 0) return { text: text.slice(0, 1000) };
+  return {
+    attachment: {
+      type: "template",
+      payload: {
+        template_type: "button",
+        text: text.slice(0, 640),
+        buttons: valid.slice(0, 3).map((b) =>
+          b.url
+            ? { type: "web_url", url: b.url, title: b.label.slice(0, 20) }
+            : {
+                type: "postback",
+                payload: b.payload,
                 title: b.label.slice(0, 20),
-              })),
-            },
-          },
-        }
-      : { text: input.text.slice(0, 1000) };
+              }
+        ),
+      },
+    },
+  };
+}
 
-  const res = await fetch(`${GRAPH}/${input.igUserId}/messages`, {
+async function postMessage(
+  igUserId: string,
+  token: string,
+  body: Record<string, unknown>
+): Promise<void> {
+  const res = await fetch(`${GRAPH}/${igUserId}/messages`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${input.token}`,
+      Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({
-      recipient: { comment_id: input.commentId },
-      message,
-    }),
+    body: JSON.stringify(body),
   });
   const data = await res.json();
   if (!res.ok || data.error) {
@@ -173,6 +180,33 @@ export async function sendPrivateReply(input: {
       `DM 발송 실패: ${data.error?.message || JSON.stringify(data)}`
     );
   }
+}
+
+export async function sendPrivateReply(input: {
+  igUserId: string;
+  token: string;
+  commentId: string;
+  text: string;
+  buttons?: DmButton[];
+}): Promise<void> {
+  await postMessage(input.igUserId, input.token, {
+    recipient: { comment_id: input.commentId },
+    message: buildMessage(input.text, input.buttons),
+  });
+}
+
+/* ── 대화창으로 직접 DM (버튼 클릭 후속 발송 등 24시간 창 내) ── */
+export async function sendDirectMessage(input: {
+  igUserId: string;
+  token: string;
+  recipientId: string; // IG-scoped user id
+  text: string;
+  buttons?: DmButton[];
+}): Promise<void> {
+  await postMessage(input.igUserId, input.token, {
+    recipient: { id: input.recipientId },
+    message: buildMessage(input.text, input.buttons),
+  });
 }
 
 /* ── 댓글에 공개 답글 달기 ── */

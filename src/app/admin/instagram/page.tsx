@@ -30,6 +30,7 @@ interface DmRule {
   reply_enabled: boolean;
   reply_text: string | null;
   follower_only: boolean;
+  follow_request_text: string | null;
   is_active: boolean;
   sent_count: number;
 }
@@ -65,6 +66,7 @@ const emptyForm = {
   reply_enabled: false,
   reply_text: "",
   follower_only: false,
+  follow_request_text: "",
 };
 
 type FormState = typeof emptyForm;
@@ -223,6 +225,7 @@ function InstagramAdminInner() {
         reply_enabled: rule.reply_enabled,
         reply_text: rule.reply_text ?? "",
         follower_only: rule.follower_only,
+        follow_request_text: rule.follow_request_text ?? "",
       });
     } else {
       setEditingId(null);
@@ -289,6 +292,7 @@ function InstagramAdminInner() {
       reply_enabled: form.reply_enabled,
       reply_text: form.reply_text,
       follower_only: form.follower_only,
+      follow_request_text: form.follow_request_text,
     };
 
     const res = await fetch("/api/admin/instagram", {
@@ -454,7 +458,7 @@ function InstagramAdminInner() {
                   ))}
                   {rule.follower_only && (
                     <span className="rounded-md bg-pink-500/15 px-2 py-0.5 text-[11px] font-semibold text-pink-400">
-                      팔로워만
+                      팔로우 유도
                     </span>
                   )}
                   {rule.reply_enabled && (
@@ -672,9 +676,10 @@ function InstagramAdminInner() {
                   {/* 팔로워 조건 */}
                   <label className="mt-4 flex cursor-pointer items-center justify-between rounded-xl border border-border bg-background px-4 py-3">
                     <div>
-                      <p className="text-sm font-semibold text-white">팔로워에게만 DM 보내기</p>
+                      <p className="text-sm font-semibold text-white">팔로우 유도 (팔로워 게이트)</p>
                       <p className="mt-0.5 text-xs text-sub-text">
-                        내 계정을 팔로우하지 않은 사람의 댓글은 건너뜁니다.
+                        비팔로워에겐 팔로우 요청 DM이 먼저 가고, 버튼을 누르면
+                        팔로우 확인 후 메인 DM이 발송됩니다.
                       </p>
                     </div>
                     <button
@@ -689,6 +694,24 @@ function InstagramAdminInner() {
                       />
                     </button>
                   </label>
+
+                  {form.follower_only && (
+                    <div className="mt-3">
+                      <textarea
+                        value={form.follow_request_text}
+                        onChange={(e) =>
+                          setForm((p) => ({ ...p, follow_request_text: e.target.value }))
+                        }
+                        placeholder={"팔로우 요청 문구 (비워두면 기본 문구 사용)\n\n기본: 앗, 아직 팔로우를 안 하셨네요! 🙏\n팔로우하신 뒤 아래 버튼을 눌러주시면 바로 보내드릴게요."}
+                        rows={3}
+                        maxLength={640}
+                        className="w-full resize-y rounded-xl border border-border bg-background px-4 py-3 text-sm leading-relaxed text-white placeholder:text-sub-text/50 focus:border-primary focus:outline-none"
+                      />
+                      <p className="mt-1 text-xs text-sub-text/70">
+                        이 DM에는 &quot;✅ 팔로우 했어요&quot; 확인 버튼이 자동으로 붙습니다.
+                      </p>
+                    </div>
+                  )}
                 </Step>
 
                 {/* STEP 3 — DM 구성 */}
@@ -870,7 +893,7 @@ function InstagramAdminInner() {
                   </div>
 
                   <p className="mt-3 text-center text-[9px] text-sub-text/50">
-                    {form.follower_only ? "팔로워의 " : ""}댓글 작성자에게 자동 발송됩니다
+                    {form.follower_only ? "비팔로워에겐 팔로우 요청 DM이 먼저 발송됩니다" : "댓글 작성자에게 자동 발송됩니다"}
                   </p>
                 </div>
 

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
-import { refreshLongLivedToken } from "@/lib/instagram";
+import { refreshLongLivedToken, subscribeWebhooks } from "@/lib/instagram";
 
 /**
  * GET /api/cron/instagram-refresh (pg_cron — 매일)
@@ -23,15 +23,32 @@ export async function GET(request: NextRequest) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
-  const threshold = new Date(Date.now() + 10 * 86400_000).toISOString();
-  const { data: accounts } = await adminClient
+  // 활성 계정 전체: 웹훅 구독 필드 최신화 (comments/messages/postbacks)
+  const { data: allAccounts } = await adminClient
     .from("instagram_accounts")
-    .select("id, username, access_token, token_expires_at")
-    .eq("is_active", true)
-    .lte("token_expires_at", threshold);
+    .select("id, ig_user_id, username, access_token, token_expires_at")
+    .eq("is_active", true);
+
+  let resubscribed = 0;
+  const errors: string[] = [];
+
+  for (const acc of allAccounts ?? []) {
+    try {
+      await subscribeWebhooks(acc.ig_user_id, acc.access_token);
+      resubscribed++;
+    } catch (err) {
+      errors.push(
+        `구독 ${acc.username}: ${err instanceof Error ? err.message : "unknown"}`
+      );
+    }
+  }
+
+  const threshold = new Date(Date.now() + 10 * 86400_000).toISOString();
+  const accounts = (allAccounts ?? []).filter(
+    (a) => a.token_expires_at <= threshold
+  );
 
   let refreshed = 0;
-  const errors: string[] = [];
 
   for (const acc of accounts ?? []) {
     try {
@@ -55,5 +72,5 @@ export async function GET(request: NextRequest) {
   }
 
   if (errors.length) console.error("[instagram-refresh] 실패:", errors);
-  return NextResponse.json({ refreshed, errors });
+  return NextResponse.json({ refreshed, resubscribed, errors });
 }

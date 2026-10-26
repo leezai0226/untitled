@@ -125,6 +125,7 @@ export async function POST(request: NextRequest) {
       reply_enabled: !!body.reply_enabled,
       reply_text: sanitize(body.reply_text || "") || null,
       follower_only: !!body.follower_only,
+      follow_request_text: sanitize(body.follow_request_text || "") || null,
       is_active: body.is_active ?? true,
     })
     .select()
@@ -177,6 +178,8 @@ export async function PUT(request: NextRequest) {
     updateData.reply_text = sanitize(body.reply_text || "") || null;
   if (body.follower_only !== undefined)
     updateData.follower_only = !!body.follower_only;
+  if (body.follow_request_text !== undefined)
+    updateData.follow_request_text = sanitize(body.follow_request_text || "") || null;
   if (body.is_active !== undefined) updateData.is_active = body.is_active;
 
   const adminClient = getAdminClient();
