@@ -240,12 +240,17 @@ export async function checkUserFollowsBusiness(
       `${GRAPH}/${igScopedUserId}?fields=is_user_follow_business&access_token=${encodeURIComponent(token)}`
     );
     const data = await res.json();
-    if (!res.ok || data.error) return null;
+    if (!res.ok || data.error) {
+      console.warn("[instagram] 팔로우 조회 실패:", JSON.stringify(data));
+      return null;
+    }
     if (typeof data.is_user_follow_business === "boolean") {
       return data.is_user_follow_business;
     }
+    console.warn("[instagram] 팔로우 필드 없음:", JSON.stringify(data));
     return null;
-  } catch {
+  } catch (err) {
+    console.warn("[instagram] 팔로우 조회 오류:", err);
     return null;
   }
 }

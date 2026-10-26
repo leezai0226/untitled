@@ -169,15 +169,18 @@ async function processComment(
     });
   if (dedupeError) return; // 이미 처리된 댓글 (unique 충돌)
 
-  // 팔로워 조건 — 비팔로워에게는 팔로우 요청 DM(+확인 버튼) 발송.
-  // 버튼을 누르면 postback 으로 돌아와 팔로우 재확인 후 메인 DM 발송.
-  // (팔로우 여부 확인 불가 시에는 메인 DM 발송 쪽으로 fail-open)
+  // 팔로워 조건 — 팔로우가 '확실히 확인된' 경우에만 즉시 발송하고,
+  // 그 외(비팔로워·확인 불가)는 팔로우 요청 DM(+확인 버튼)을 보낸다.
+  // 버튼 클릭(postback) 시점엔 대화가 열려 있어 팔로우 조회가 정확해진다.
   if (matched.follower_only && input.fromId) {
     const follows = await checkUserFollowsBusiness(
       input.fromId,
       account.access_token
     );
-    if (follows === false) {
+    console.log(
+      `[instagram/webhook] 팔로우 확인: user=${input.fromUsername} result=${String(follows)}`
+    );
+    if (follows !== true) {
       try {
         await sendPrivateReply({
           igUserId: account.ig_user_id,
