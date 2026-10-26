@@ -21,12 +21,14 @@ export async function GET(request: NextRequest) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
-  const { data: account } = await adminClient
+  // account_id 지정 시 해당 계정, 없으면 첫 활성 계정
+  const accountId = new URL(request.url).searchParams.get("account_id");
+  let query = adminClient
     .from("instagram_accounts")
     .select("access_token")
-    .eq("is_active", true)
-    .limit(1)
-    .maybeSingle();
+    .eq("is_active", true);
+  if (accountId) query = query.eq("id", accountId);
+  const { data: account } = await query.limit(1).maybeSingle();
 
   if (!account) {
     return NextResponse.json(

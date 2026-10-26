@@ -38,6 +38,7 @@ interface DmRule {
 
 interface DmLog {
   id: string;
+  account_id: string | null;
   commenter_username: string | null;
   comment_text: string | null;
   status: string;
@@ -149,7 +150,9 @@ function InstagramAdminInner() {
     4: false,
   });
 
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [media, setMedia] = useState<MediaItem[]>([]);
+  const [mediaAccountId, setMediaAccountId] = useState<string | null>(null);
   const [mediaLoading, setMediaLoading] = useState(false);
   const [mediaError, setMediaError] = useState<string | null>(null);
 
@@ -180,23 +183,31 @@ function InstagramAdminInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const account = accounts[0] ?? null;
+  const account =
+    accounts.find((a) => a.id === selectedAccountId) ?? null;
 
-  const loadMedia = useCallback(async () => {
-    if (media.length > 0 || mediaLoading) return;
-    setMediaLoading(true);
-    setMediaError(null);
-    try {
-      const res = await fetch("/api/admin/instagram/media");
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      setMedia(data.media ?? []);
-    } catch (err) {
-      setMediaError(err instanceof Error ? err.message : "게시물 조회 실패");
-    } finally {
-      setMediaLoading(false);
-    }
-  }, [media.length, mediaLoading]);
+  const loadMedia = useCallback(
+    async (accountId: string) => {
+      if ((media.length > 0 && mediaAccountId === accountId) || mediaLoading)
+        return;
+      setMediaLoading(true);
+      setMediaError(null);
+      try {
+        const res = await fetch(
+          `/api/admin/instagram/media?account_id=${accountId}`
+        );
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        setMedia(data.media ?? []);
+        setMediaAccountId(accountId);
+      } catch (err) {
+        setMediaError(err instanceof Error ? err.message : "게시물 조회 실패");
+      } finally {
+        setMediaLoading(false);
+      }
+    },
+    [media.length, mediaAccountId, mediaLoading]
+  );
 
   const toggleStep = (n: number) =>
     setOpenSteps((p) => ({ ...p, [n]: !p[n] }));
@@ -241,7 +252,7 @@ function InstagramAdminInner() {
         : { 1: true, 2: false, 3: false, 4: false }   // 새로 만들기/복사: 게시물부터
     );
     setBuilderOpen(true);
-    loadMedia();
+    loadMedia(account.id);
   };
 
   const addKeyword = () => {
@@ -342,6 +353,7 @@ function InstagramAdminInner() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ resource: "account", id: account.id }),
     });
+    setSelectedAccountId(null);
     fetchAll();
   };
 
@@ -352,6 +364,76 @@ function InstagramAdminInner() {
       </div>
     );
   }
+
+  /* ── 계정 선택 화면 ── */
+  if (!account) {
+    return (
+      <div className="pt-20 pb-12">
+        <div className="mx-auto max-w-3xl px-6 py-12">
+          <h1 className="text-3xl font-bold text-white">
+            📩 인스타그램 <span className="text-primary">자동 DM</span>
+          </h1>
+          <p className="mt-2 text-sm text-sub-text">
+            관리할 계정을 선택하세요.
+          </p>
+
+          {!envReady && (
+            <div className="mt-6 rounded-xl border border-yellow-500/40 bg-yellow-500/10 p-5 text-sm text-yellow-300">
+              ⚠️ 인스타그램 환경변수가 설정되지 않았습니다.
+            </div>
+          )}
+
+          <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {accounts.map((acc) => {
+              const count = rules.filter((r) => r.account_id === acc.id).length;
+              return (
+                <button
+                  key={acc.id}
+                  onClick={() => setSelectedAccountId(acc.id)}
+                  className="group flex items-center gap-4 rounded-2xl border border-border bg-card p-6 text-left transition-all hover:-translate-y-0.5 hover:border-primary/60 hover:shadow-lg hover:shadow-primary/10"
+                >
+                  <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-yellow-400 via-pink-500 to-purple-500 text-2xl">
+                    📷
+                  </div>
+                  <div className="min-w-0">
+                    <p className="truncate font-bold text-white group-hover:text-primary transition-colors">
+                      @{acc.username}
+                    </p>
+                    <p className="mt-1 text-xs text-sub-text">
+                      자동화 {count}개 ·{" "}
+                      {acc.is_active ? "연결됨" : "비활성"}
+                    </p>
+                  </div>
+                  <span className="ml-auto flex-shrink-0 text-primary opacity-0 transition-opacity group-hover:opacity-100">
+                    →
+                  </span>
+                </button>
+              );
+            })}
+
+            {/* 계정 추가 */}
+            <a
+              href="/api/instagram/oauth/start"
+              className="flex items-center justify-center gap-3 rounded-2xl border border-dashed border-border bg-card/40 p-6 text-sub-text transition-all hover:border-primary/60 hover:text-primary"
+            >
+              <span className="text-2xl">＋</span>
+              <span className="text-sm font-semibold">계정 추가 연결</span>
+            </a>
+          </div>
+
+          {accounts.length === 0 && (
+            <p className="mt-6 text-xs text-sub-text/70 leading-relaxed">
+              연결할 계정은 비즈니스/크리에이터 계정이어야 하며, Meta 앱에
+              Instagram 테스터로 등록·수락된 상태여야 합니다.
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  const accountRules = rules.filter((r) => r.account_id === account?.id);
+  const accountLogs = logs.filter((l) => l.account_id === account?.id);
 
   const previewButtons = [
     form.button_label && { label: form.button_label },
@@ -366,8 +448,14 @@ function InstagramAdminInner() {
         {/* 헤더 */}
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-white">
-              📩 인스타그램 <span className="text-primary">자동 DM</span>
+            <button
+              onClick={() => setSelectedAccountId(null)}
+              className="text-xs text-sub-text transition-colors hover:text-primary"
+            >
+              ← 계정 선택으로
+            </button>
+            <h1 className="mt-1 text-3xl font-bold text-white">
+              <span className="text-primary">@{account.username}</span> 자동 DM
             </h1>
             <p className="mt-2 text-sm text-sub-text">
               댓글 키워드에 반응해 자동으로 DM을 보냅니다.
@@ -389,47 +477,34 @@ function InstagramAdminInner() {
 
         {/* ── 계정 ── */}
         <div className="mt-8 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-card px-6 py-4">
-          {account ? (
-            <>
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-tr from-yellow-400 via-pink-500 to-purple-500 text-lg">
-                  📷
-                </div>
-                <div>
-                  <p className="font-semibold text-white">@{account.username}</p>
-                  <p className="text-xs text-sub-text">연결됨 · 토큰 자동 갱신 중</p>
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <a
-                  href="/api/instagram/oauth/start"
-                  className="rounded-lg border border-border px-4 py-2 text-xs text-sub-text hover:border-primary/50 hover:text-white"
-                >
-                  재연결
-                </a>
-                <button
-                  onClick={disconnectAccount}
-                  className="rounded-lg border border-border px-4 py-2 text-xs text-sub-text hover:border-red-400/50 hover:text-red-400"
-                >
-                  연결 해제
-                </button>
-              </div>
-            </>
-          ) : (
-            <div className="w-full py-4 text-center">
-              <a
-                href="/api/instagram/oauth/start"
-                className="inline-block rounded-xl bg-primary px-6 py-3 text-sm font-bold text-background hover:brightness-110"
-              >
-                인스타그램 계정 연결하기
-              </a>
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-tr from-yellow-400 via-pink-500 to-purple-500 text-lg">
+              📷
             </div>
-          )}
+            <div>
+              <p className="font-semibold text-white">@{account.username}</p>
+              <p className="text-xs text-sub-text">연결됨 · 토큰 자동 갱신 중</p>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <a
+              href="/api/instagram/oauth/start"
+              className="rounded-lg border border-border px-4 py-2 text-xs text-sub-text hover:border-primary/50 hover:text-white"
+            >
+              재연결
+            </a>
+            <button
+              onClick={disconnectAccount}
+              className="rounded-lg border border-border px-4 py-2 text-xs text-sub-text hover:border-red-400/50 hover:text-red-400"
+            >
+              연결 해제
+            </button>
+          </div>
         </div>
 
         {/* ── 자동화 목록 ── */}
         <div className="mt-8 space-y-3">
-          {rules.length === 0 && (
+          {accountRules.length === 0 && (
             <div className="rounded-2xl border border-dashed border-border bg-card/50 p-12 text-center">
               <p className="mb-4 text-4xl">⚡️</p>
               <p className="font-semibold text-white">아직 자동화가 없어요</p>
@@ -439,7 +514,7 @@ function InstagramAdminInner() {
             </div>
           )}
 
-          {rules.map((rule) => (
+          {accountRules.map((rule) => (
             <div
               key={rule.id}
               className="flex flex-wrap items-center gap-4 rounded-2xl border border-border bg-card p-4 transition-colors hover:border-primary/40"
@@ -522,10 +597,10 @@ function InstagramAdminInner() {
         <div className="mt-10">
           <h2 className="text-lg font-bold text-white">최근 발송 로그</h2>
           <div className="mt-4 overflow-hidden rounded-2xl border border-border bg-card">
-            {logs.length === 0 ? (
+            {accountLogs.length === 0 ? (
               <p className="p-8 text-center text-sm text-sub-text">아직 발송 기록이 없습니다.</p>
             ) : (
-              logs.map((log) => (
+              accountLogs.map((log) => (
                 <div key={log.id} className="flex items-center justify-between gap-3 border-b border-border/40 px-5 py-3 text-sm last:border-b-0">
                   <div className="min-w-0">
                     <p className="text-white">
