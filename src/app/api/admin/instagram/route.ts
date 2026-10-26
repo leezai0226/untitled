@@ -97,6 +97,8 @@ export async function POST(request: NextRequest) {
       account_id: body.account_id,
       name: sanitize(body.name),
       media_id: sanitize(body.media_id || "") || null,
+      media_thumbnail_url: body.media_thumbnail_url || null,
+      media_caption: sanitize(body.media_caption || "") || null,
       keywords,
       dm_text: sanitize(body.dm_text || ""),
       card_title: sanitize(body.card_title || "") || null,
@@ -132,6 +134,10 @@ export async function PUT(request: NextRequest) {
   if (body.name !== undefined) updateData.name = sanitize(body.name);
   if (body.media_id !== undefined)
     updateData.media_id = sanitize(body.media_id || "") || null;
+  if (body.media_thumbnail_url !== undefined)
+    updateData.media_thumbnail_url = body.media_thumbnail_url || null;
+  if (body.media_caption !== undefined)
+    updateData.media_caption = sanitize(body.media_caption || "") || null;
   if (body.keywords !== undefined)
     updateData.keywords = (body.keywords as string[])
       .map((k) => sanitize(k).trim())

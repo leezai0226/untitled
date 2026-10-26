@@ -184,3 +184,33 @@ export async function sendPrivateReply(input: {
     );
   }
 }
+
+/* ── 내 최근 게시물 목록 (게시물 선택 UI용) ── */
+export interface IgMedia {
+  id: string;
+  caption?: string;
+  media_type: "IMAGE" | "VIDEO" | "CAROUSEL_ALBUM";
+  media_url?: string;
+  thumbnail_url?: string;
+  permalink?: string;
+  timestamp?: string;
+}
+
+export async function fetchRecentMedia(
+  token: string,
+  limit = 30
+): Promise<IgMedia[]> {
+  const params = new URLSearchParams({
+    fields: "id,caption,media_type,media_url,thumbnail_url,permalink,timestamp",
+    limit: String(limit),
+    access_token: token,
+  });
+  const res = await fetch(`${GRAPH}/me/media?${params.toString()}`);
+  const data = await res.json();
+  if (!res.ok || data.error) {
+    throw new Error(
+      `게시물 조회 실패: ${data.error?.message || JSON.stringify(data)}`
+    );
+  }
+  return (data.data ?? []) as IgMedia[];
+}
