@@ -199,12 +199,12 @@ function InstagramAdminInner() {
   const toggleStep = (n: number) =>
     setOpenSteps((p) => ({ ...p, [n]: !p[n] }));
 
-  const openBuilder = (rule?: DmRule) => {
+  const openBuilder = (rule?: DmRule, duplicate = false) => {
     if (!account) return alert("먼저 인스타그램 계정을 연결해 주세요.");
     if (rule) {
-      setEditingId(rule.id);
+      setEditingId(duplicate ? null : rule.id);
       setForm({
-        name: rule.name,
+        name: duplicate ? `${rule.name} (복사)` : rule.name,
         media: rule.media_id
           ? {
               id: rule.media_id,
@@ -232,7 +232,11 @@ function InstagramAdminInner() {
       setForm({ ...emptyForm });
     }
     setKeywordInput("");
-    setOpenSteps({ 1: true, 2: false, 3: false, 4: false });
+    setOpenSteps(
+      rule && !duplicate
+        ? { 1: false, 2: false, 3: false, 4: false } // 수정: 요약만 보이게 접기
+        : { 1: true, 2: false, 3: false, 4: false }   // 새로 만들기/복사: 게시물부터
+    );
     setBuilderOpen(true);
     loadMedia();
   };
@@ -491,6 +495,13 @@ function InstagramAdminInner() {
                   className="rounded-lg border border-border px-3 py-1.5 text-xs text-sub-text hover:text-white"
                 >
                   수정
+                </button>
+                <button
+                  onClick={() => openBuilder(rule, true)}
+                  title="이 자동화를 복제해 게시물만 바꿔 저장"
+                  className="rounded-lg border border-border px-3 py-1.5 text-xs text-sub-text hover:border-primary/50 hover:text-primary"
+                >
+                  복사
                 </button>
                 <button
                   onClick={() => deleteRule(rule)}
