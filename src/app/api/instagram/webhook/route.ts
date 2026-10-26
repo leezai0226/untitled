@@ -10,8 +10,10 @@ import {
 } from "@/lib/instagram";
 
 const DEFAULT_FOLLOW_REQUEST =
-  "앗, 아직 팔로우를 안 하셨네요! 🙏\n팔로우하신 뒤 아래 버튼을 눌러주시면 바로 보내드릴게요.";
-const FOLLOW_CONFIRM_LABEL = "✅ 팔로우 했어요";
+  "요청 감사합니다! 🙌\n팔로워분들께 보내드리고 있어요.\n팔로우하셨다면 아래 버튼을 눌러주세요!";
+const DEFAULT_NONFOLLOWER =
+  "앗, 아직 팔로우가 확인되지 않았어요 🙏\n팔로우하신 뒤 다시 버튼을 눌러주세요!";
+const FOLLOW_CONFIRM_LABEL = "✅ 팔로우 확인";
 
 /**
  * Instagram Webhooks — 댓글 이벤트 수신 → 키워드 매칭 → 비공개 답장 DM
@@ -162,6 +164,7 @@ async function processComment(
       rule_id: matched.id,
       account_id: account.id,
       comment_id: input.commentId,
+      commenter_id: input.fromId || null,
       commenter_username: input.fromUsername,
       comment_text: input.commentText,
       media_id: input.mediaId,
@@ -169,47 +172,51 @@ async function processComment(
     });
   if (dedupeError) return; // 이미 처리된 댓글 (unique 충돌)
 
-  // 팔로워 조건 — 팔로우가 '확실히 확인된' 경우에만 즉시 발송하고,
-  // 그 외(비팔로워·확인 불가)는 팔로우 요청 DM(+확인 버튼)을 보낸다.
-  // 버튼 클릭(postback) 시점엔 대화가 열려 있어 팔로우 조회가 정확해진다.
-  if (matched.follower_only && input.fromId) {
-    const follows = await checkUserFollowsBusiness(
-      input.fromId,
-      account.access_token
-    );
-    console.log(
-      `[instagram/webhook] 팔로우 확인: user=${input.fromUsername} result=${String(follows)}`
-    );
-    if (follows !== true) {
-      try {
-        await sendPrivateReply({
-          igUserId: account.ig_user_id,
-          token: account.access_token,
-          commentId: input.commentId,
-          text: matched.follow_request_text || DEFAULT_FOLLOW_REQUEST,
-          buttons: [
-            {
-              label: FOLLOW_CONFIRM_LABEL,
-              payload: `fg:${matched.id}:${input.commentId}`,
-            },
-          ],
-        });
-        await adminClient
-          .from("instagram_dm_logs")
-          .update({ status: "follow_request", error: null })
-          .eq("comment_id", input.commentId);
-      } catch (err) {
-        console.error("[instagram/webhook] 팔로우 요청 DM 실패:", err);
-        await adminClient
-          .from("instagram_dm_logs")
-          .update({
-            status: "failed",
-            error: err instanceof Error ? err.message : "unknown",
-          })
-          .eq("comment_id", input.commentId);
+  // 팔로우 게이트 — 댓글 단계에선 Meta가 팔로우 조회를 막으므로(code 230)
+  // 켜져 있으면 모두에게 '팔로우 확인 DM + 버튼'을 먼저 보낸다.
+  // 버튼 클릭(postback) 시점에 대화가 열려 조회가 가능해지고, 그때 분기한다.
+  if (matched.follower_only) {
+    try {
+      await sendPrivateReply({
+        igUserId: account.ig_user_id,
+        token: account.access_token,
+        commentId: input.commentId,
+        text: matched.follow_request_text || DEFAULT_FOLLOW_REQUEST,
+        buttons: [
+          {
+            label: FOLLOW_CONFIRM_LABEL,
+            payload: `fg:${matched.id}:${input.commentId}`,
+          },
+        ],
+      });
+      await adminClient
+        .from("instagram_dm_logs")
+        .update({ status: "follow_request", error: null })
+        .eq("comment_id", input.commentId);
+
+      // 확인 DM 발송 성공 시에도 공개 자동댓글 작동
+      if (matched.reply_enabled && matched.reply_text) {
+        try {
+          await replyToComment(
+            input.commentId,
+            account.access_token,
+            matched.reply_text
+          );
+        } catch (replyErr) {
+          console.error("[instagram/webhook] 공개 답글 실패:", replyErr);
+        }
       }
-      return;
+    } catch (err) {
+      console.error("[instagram/webhook] 팔로우 확인 DM 실패:", err);
+      await adminClient
+        .from("instagram_dm_logs")
+        .update({
+          status: "failed",
+          error: err instanceof Error ? err.message : "unknown",
+        })
+        .eq("comment_id", input.commentId);
     }
+    return;
   }
 
   // DM 발송 — 버튼이 있으면 버튼 템플릿(본문+버튼 1~2개), 없으면 텍스트
@@ -300,19 +307,24 @@ async function handleFollowGatePostback(
     account.access_token
   );
 
+  console.log(
+    `[instagram/webhook] 버튼 클릭 팔로우 확인: sender=${input.senderId} result=${String(follows)}`
+  );
+
   if (follows === false) {
+    // 비팔로워용 DM + 재확인 버튼
     try {
       await sendDirectMessage({
         igUserId: account.ig_user_id,
         token: account.access_token,
         recipientId: input.senderId,
-        text: "아직 팔로우가 확인되지 않았어요 🙏\n팔로우하신 뒤 다시 버튼을 눌러주세요!",
+        text: rule.nonfollower_text || DEFAULT_NONFOLLOWER,
         buttons: [
           { label: FOLLOW_CONFIRM_LABEL, payload: input.payload },
         ],
       });
     } catch (err) {
-      console.error("[instagram/webhook] 팔로우 재요청 실패:", err);
+      console.error("[instagram/webhook] 비팔로워 DM 실패:", err);
     }
     return;
   }

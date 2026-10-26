@@ -31,6 +31,7 @@ interface DmRule {
   reply_text: string | null;
   follower_only: boolean;
   follow_request_text: string | null;
+  nonfollower_text: string | null;
   is_active: boolean;
   sent_count: number;
 }
@@ -67,6 +68,7 @@ const emptyForm = {
   reply_text: "",
   follower_only: false,
   follow_request_text: "",
+  nonfollower_text: "",
 };
 
 type FormState = typeof emptyForm;
@@ -226,6 +228,7 @@ function InstagramAdminInner() {
         reply_text: rule.reply_text ?? "",
         follower_only: rule.follower_only,
         follow_request_text: rule.follow_request_text ?? "",
+        nonfollower_text: rule.nonfollower_text ?? "",
       });
     } else {
       setEditingId(null);
@@ -297,6 +300,7 @@ function InstagramAdminInner() {
       reply_text: form.reply_text,
       follower_only: form.follower_only,
       follow_request_text: form.follow_request_text,
+      nonfollower_text: form.nonfollower_text,
     };
 
     const res = await fetch("/api/admin/instagram", {
@@ -688,9 +692,9 @@ function InstagramAdminInner() {
                   <label className="mt-4 flex cursor-pointer items-center justify-between rounded-xl border border-border bg-background px-4 py-3">
                     <div>
                       <p className="text-sm font-semibold text-white">팔로우 유도 (팔로워 게이트)</p>
-                      <p className="mt-0.5 text-xs text-sub-text">
-                        비팔로워에겐 팔로우 요청 DM이 먼저 가고, 버튼을 누르면
-                        팔로우 확인 후 메인 DM이 발송됩니다.
+<p className="mt-0.5 text-xs text-sub-text">
+                        댓글 작성자 모두에게 팔로우 확인 DM이 먼저 가고, 버튼을
+                        누르면 팔로우 여부에 따라 다른 DM이 발송됩니다.
                       </p>
                     </div>
                     <button
@@ -707,19 +711,40 @@ function InstagramAdminInner() {
                   </label>
 
                   {form.follower_only && (
-                    <div className="mt-3">
-                      <textarea
-                        value={form.follow_request_text}
-                        onChange={(e) =>
-                          setForm((p) => ({ ...p, follow_request_text: e.target.value }))
-                        }
-                        placeholder={"팔로우 요청 문구 (비워두면 기본 문구 사용)\n\n기본: 앗, 아직 팔로우를 안 하셨네요! 🙏\n팔로우하신 뒤 아래 버튼을 눌러주시면 바로 보내드릴게요."}
-                        rows={3}
-                        maxLength={640}
-                        className="w-full resize-y rounded-xl border border-border bg-background px-4 py-3 text-sm leading-relaxed text-white placeholder:text-sub-text/50 focus:border-primary focus:outline-none"
-                      />
-                      <p className="mt-1 text-xs text-sub-text/70">
-                        이 DM에는 &quot;✅ 팔로우 했어요&quot; 확인 버튼이 자동으로 붙습니다.
+                    <div className="mt-3 space-y-3">
+                      <div>
+                        <p className="mb-1.5 text-xs font-bold text-sub-text">
+                          ① 최초 발송 — 팔로우 확인 DM
+                        </p>
+                        <textarea
+                          value={form.follow_request_text}
+                          onChange={(e) =>
+                            setForm((p) => ({ ...p, follow_request_text: e.target.value }))
+                          }
+                          placeholder={"비워두면 기본 문구 사용:\n요청 감사합니다! 🙌 팔로워분들께 보내드리고 있어요. 팔로우하셨다면 아래 버튼을 눌러주세요!"}
+                          rows={3}
+                          maxLength={640}
+                          className="w-full resize-y rounded-xl border border-border bg-background px-4 py-3 text-sm leading-relaxed text-white placeholder:text-sub-text/50 focus:border-primary focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <p className="mb-1.5 text-xs font-bold text-sub-text">
+                          ② 버튼 클릭 시 — 비팔로워에게 보낼 DM
+                        </p>
+                        <textarea
+                          value={form.nonfollower_text}
+                          onChange={(e) =>
+                            setForm((p) => ({ ...p, nonfollower_text: e.target.value }))
+                          }
+                          placeholder={"비워두면 기본 문구 사용:\n앗, 아직 팔로우가 확인되지 않았어요 🙏 팔로우하신 뒤 다시 버튼을 눌러주세요!"}
+                          rows={3}
+                          maxLength={640}
+                          className="w-full resize-y rounded-xl border border-border bg-background px-4 py-3 text-sm leading-relaxed text-white placeholder:text-sub-text/50 focus:border-primary focus:outline-none"
+                        />
+                      </div>
+                      <p className="text-xs text-sub-text/70">
+                        두 DM 모두 &quot;✅ 팔로우 확인&quot; 버튼이 자동으로 붙고,
+                        팔로워로 확인되면 3단계의 메인 DM이 발송됩니다.
                       </p>
                     </div>
                   )}
@@ -728,7 +753,7 @@ function InstagramAdminInner() {
                 {/* STEP 3 — DM 구성 */}
                 <Step
                   no="3"
-                  title="어떤 DM을 보낼까요?"
+                  title={form.follower_only ? "팔로워에게 보낼 메인 DM" : "어떤 DM을 보낼까요?"}
                   summary={
                     form.dm_text
                       ? `${form.dm_text.slice(0, 30)}${previewButtons.length ? ` · 버튼 ${previewButtons.length}개` : ""}`
