@@ -92,7 +92,7 @@ export default function ProductionPage() {
   return (
     <div className="scroll-smooth bg-background">
       {/* ═══════════ HERO ═══════════ */}
-      <section className="relative flex min-h-screen flex-col items-center justify-center px-6 pt-20 text-center">
+      <section className="relative flex min-h-screen flex-col items-center justify-center px-6 pb-56 pt-24 text-center md:pb-36">
         <FadeInSection>
           <p className="font-display text-xs font-semibold uppercase tracking-[0.3em] text-primary">
             YouTube for Doctors &amp; Lawyers
