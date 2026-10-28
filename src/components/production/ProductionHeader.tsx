@@ -11,10 +11,10 @@ import { motion, AnimatePresence } from "framer-motion";
  */
 
 const anchors = [
-  { href: "#work", label: "WORK" },
-  { href: "#system", label: "SYSTEM" },
-  { href: "#services", label: "SERVICES" },
   { href: "#about", label: "ABOUT" },
+  { href: "#process", label: "PROCESS" },
+  { href: "#pricing", label: "PRICING" },
+  { href: "#faq", label: "FAQ" },
 ];
 
 export default function ProductionHeader() {
@@ -43,10 +43,10 @@ export default function ProductionHeader() {
             </a>
           ))}
           <a
-            href="#contact"
+            href="#apply"
             className="rounded-xl bg-primary px-5 py-2 text-sm font-semibold text-background transition-all duration-200 hover:-translate-y-0.5 hover:brightness-110"
           >
-            제작 문의
+            진단 신청
           </a>
           <Link
             href="/"
@@ -96,11 +96,11 @@ export default function ProductionHeader() {
                 </a>
               ))}
               <a
-                href="#contact"
+                href="#apply"
                 onClick={() => setIsOpen(false)}
                 className="rounded-xl bg-primary px-5 py-3 text-center font-semibold text-background"
               >
-                제작 문의
+                진단 신청
               </a>
               <Link
                 href="/"

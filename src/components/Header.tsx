@@ -59,7 +59,7 @@ export default function Header() {
     "";
 
   // 프로덕션 섹션은 전용 헤더 사용
-  if (pathname?.startsWith("/production")) {
+  if (pathname?.startsWith("/production") || pathname?.startsWith("/checklist")) {
     return <ProductionHeader />;
   }
 
