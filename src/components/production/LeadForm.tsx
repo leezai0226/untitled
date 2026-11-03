@@ -465,32 +465,22 @@ export default function LeadForm({
                 {submitting ? "접수 중..." : "기획 진단 신청하기"}
               </button>
 
-              <div className="flex items-center justify-center gap-4 pt-2 text-sm text-sub-text">
-                {contact.kakaoChannelUrl.trim() && (
+              {/* 카카오톡 문의 버튼 — config 의 kakaoChannelUrl 이 비어 있으면 숨김 */}
+              {contact.kakaoChannelUrl.trim() && (
+                <div className="pt-2 text-center">
+                  <p className="mb-3 text-sm text-sub-text">
+                    폼 작성이 번거로우시면 카카오톡으로 편하게 문의해 주세요.
+                  </p>
                   <a
                     href={contact.kakaoChannelUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="transition-colors hover:text-primary"
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#FEE500] px-6 py-4 text-base font-bold text-[#191919] transition-all duration-200 hover:-translate-y-0.5 hover:brightness-95"
                   >
-                    💬 카톡으로 문의
+                    💬 카카오톡으로 문의하기
                   </a>
-                )}
-                <a
-                  href={`mailto:${contact.email}`}
-                  className="transition-colors hover:text-primary"
-                >
-                  ✉️ 메일로 문의
-                </a>
-                <a
-                  href={contact.instagramUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="transition-colors hover:text-primary"
-                >
-                  인스타 DM ↗
-                </a>
-              </div>
+                </div>
+              )}
             </form>
           </FadeInSection>
         )}

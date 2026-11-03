@@ -5,7 +5,6 @@ import FadeInSection from "@/components/FadeInSection";
 import ProcessSection from "@/components/production/ProcessSection";
 import SamplesSection from "@/components/production/SamplesSection";
 import PricingSection from "@/components/production/PricingSection";
-import ComplianceSection from "@/components/production/ComplianceSection";
 import FaqSection from "@/components/production/FaqSection";
 import LeadForm from "@/components/production/LeadForm";
 import KakaoFloat from "@/components/production/KakaoFloat";
@@ -33,17 +32,17 @@ const SYSTEM_STEPS = [
   {
     no: "01",
     title: "채널 진단 · 전략",
-    desc: "병원·사무소의 현재 상황과 목표를 정리하고, 어떤 환자·의뢰인에게 어떤 콘텐츠로 닿을지 방향을 세웁니다.",
+    desc: "현재 상황과 목표를 정리하고, 어떤 시청자에게 어떤 콘텐츠로 닿을지 방향을 세웁니다.",
   },
   {
     no: "02",
     title: "콘텐츠 기획",
-    desc: "환자·의뢰인이 실제로 검색하는 질문을 기반으로 월 단위 콘텐츠 주제를 설계합니다.",
+    desc: "시청자가 실제로 검색하는 질문을 기반으로 월 단위 콘텐츠 주제를 설계합니다.",
   },
   {
     no: "03",
     title: "촬영 준비 · 촬영",
-    desc: "키워드 정리, 화법 코칭, 촬영 세팅까지. 원장님·변호사님은 말씀하시는 것에만 집중하시면 됩니다.",
+    desc: "키워드 정리, 화법 코칭, 촬영 세팅까지. 말씀하시는 것에만 집중하시면 됩니다.",
   },
   {
     no: "04",
@@ -149,16 +148,16 @@ export default function ProductionPage() {
               {nextNo()} — WHAT WE DO
             </p>
             <h2 className="mt-4 max-w-2xl text-3xl font-bold leading-snug text-white md:text-4xl">
-              잘 만든 영상과
+              조회수보다 중요한 건,
               <br />
-              환자·의뢰인이 찾아오는 채널은 다릅니다.
+              전환율입니다.
             </h2>
             <p className="mt-6 max-w-2xl text-base leading-relaxed text-sub-text">
-              영상 편집만 8년을 하다 보니, 기획이 문제인 영상을 너무 많이
-              봤습니다. 전문성은 충분한데 무엇을 찍을지, 어떤 순서로 말할지가
-              정리되지 않아 멈춰 있는 채널들이요. 그래서 기획·촬영·편집을 한
-              번에 맡는 팀을 만들었습니다. 원장님·변호사님은 본업에 집중하시고,
-              매달 반복되는 운영 실무는 저희가 맡습니다.
+              영상을 8년 동안 만들면서 느낀 점은, 기획이 문제인 영상이 너무
+              많다는 것입니다. 전문성은 충분한데 무엇을 찍을지, 누구에게 말할지가
+              정리되지 않으면 조회수가 나와도 문의로 이어지지 않습니다. 그래서
+              기획·촬영·편집을 한 번에 맡는 팀을 만들었습니다. 원장님·변호사님은
+              본업에 집중하시고, 매달 반복되는 운영 실무는 저희가 맡습니다.
             </p>
           </FadeInSection>
 
@@ -254,9 +253,9 @@ export default function ProductionPage() {
               {nextNo()} — SYSTEM
             </p>
             <h2 className="mt-4 text-3xl font-bold leading-snug text-white md:text-4xl">
-              매달 같은 기준으로 굴러가는
+              영상 한 편이 아니라,
               <br />
-              운영 시스템
+              채널이 돌아가는 시스템을 만듭니다.
             </h2>
           </FadeInSection>
 
@@ -320,8 +319,7 @@ export default function ProductionPage() {
       {/* ═══════════ PRICING ═══════════ */}
       <PricingSection no={nextNo()} onSelectPackage={setSelectedPackage} />
 
-      {/* ═══════════ COMPLIANCE (광고 규정) ═══════════ */}
-      <ComplianceSection no={nextNo()} />
+      {/* 광고 규정은 별도 섹션 대신 FAQ 항목으로 다룬다 (ComplianceSection 컴포넌트는 보존) */}
 
       {/* ═══════════ FAQ ═══════════ */}
       <FaqSection no={nextNo()} />

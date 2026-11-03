@@ -4,14 +4,14 @@ import FadeInSection from "@/components/FadeInSection";
 
 /**
  * 진행 방식 — 기획 진단부터 첫 업로드까지 4단계.
- * "원장님(변호사님)이 실제로 쓰시는 시간은 한 달에 반나절" 강조.
+ * "실제로 쓰시는 시간은 한 달에 반나절" 강조.
  */
 
 const STEPS = [
   {
     no: "STEP 1",
     title: "기획 진단",
-    time: "30분 · 온라인 또는 방문",
+    time: "30분 · 온라인",
     desc: "지금 상황과 목표를 듣고, 찍을 주제와 첫 달 계획을 함께 정리합니다. 진단 리포트 1장을 드립니다.",
   },
   {
@@ -22,9 +22,9 @@ const STEPS = [
   },
   {
     no: "STEP 3",
-    title: "몰아 찍기",
-    time: "반나절 · 3~4편",
-    desc: "하루 반나절에 3~4편을 한 번에 촬영합니다. 대본은 외우지 않으셔도 됩니다 — 키워드만 보고 평소 상담하듯 말씀하시면 됩니다.",
+    title: "촬영",
+    time: "반나절 (2~4시간) · 4편 이상",
+    desc: "하루 반나절, 2~4시간에 4편 이상을 한 번에 촬영합니다. 대본은 외우지 않으셔도 됩니다 — 키워드만 보고 평소 상담하듯 말씀하시면 됩니다.",
   },
   {
     no: "STEP 4",
@@ -43,9 +43,9 @@ export default function ProcessSection({ no }: { no: string }) {
             {no} — PROCESS
           </p>
           <h2 className="mt-4 text-3xl font-bold leading-snug text-white md:text-4xl">
-            진료와 사건은 그대로 보시고,
+            기획 진단부터 첫 업로드까지,
             <br />
-            영상은 이렇게 진행됩니다.
+            4단계로 진행됩니다.
           </h2>
         </FadeInSection>
 
@@ -73,7 +73,7 @@ export default function ProcessSection({ no }: { no: string }) {
         <FadeInSection delay={0.3}>
           <div className="mt-10 rounded-2xl border border-primary/30 bg-primary/5 p-7 text-center">
             <p className="text-lg font-bold text-white md:text-xl">
-              원장님·변호사님이 실제로 쓰시는 시간은{" "}
+              실제로 쓰시는 시간은{" "}
               <span className="text-primary">한 달에 반나절</span>이면 됩니다.
             </p>
           </div>
