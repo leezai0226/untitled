@@ -57,6 +57,11 @@
     "revisionsPerVideo": 2,
     "extraRevisionFee": "",
     "proposalValidDays": 14,
-    "vatIncluded": false
+    "vatIncluded": false,
+    "longTermDiscounts": [
+      { "months": 3, "rate": "" },
+      { "months": 6, "rate": "" }
+    ],
+    "discountClawbackOnEarlyTermination": true
   }
 }

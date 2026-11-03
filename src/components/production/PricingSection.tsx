@@ -1,7 +1,7 @@
 "use client";
 
 import FadeInSection from "@/components/FadeInSection";
-import { pricing, packages } from "@/config/production";
+import { pricing, packages, longTermDiscounts } from "@/config/production";
 
 /**
  * 가격 섹션 — 값은 전부 src/config/production.ts 에서 읽는다.
@@ -20,6 +20,8 @@ export default function PricingSection({
     const v = pricing[key];
     return typeof v === "string" && v.trim() ? v : "상담 후 안내";
   };
+
+  const activeDiscounts = longTermDiscounts.filter((d) => d.rate.trim());
 
   const handleSelect = (name: string) => {
     onSelectPackage(name);
@@ -110,6 +112,33 @@ export default function PricingSection({
             );
           })}
         </div>
+
+        {activeDiscounts.length > 0 && (
+          <FadeInSection delay={0.25}>
+            <div className="mt-10 rounded-2xl border border-primary/30 bg-primary/5 p-6 text-center md:p-7">
+              <p className="font-display text-[10px] font-bold tracking-[0.2em] text-primary">
+                LONG-TERM DISCOUNT
+              </p>
+              <p className="mt-3 text-base font-bold text-white md:text-lg">
+                기본은 월 단위 계약, 길게 함께하시면 월 요금을 할인해 드립니다.
+              </p>
+              <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                {activeDiscounts.map((d) => (
+                  <span
+                    key={d.months}
+                    className="rounded-lg border border-border bg-card px-4 py-2 text-sm text-sub-text"
+                  >
+                    {d.months}개월 이상 계약 시{" "}
+                    <strong className="font-display text-primary">{d.rate}</strong> 할인
+                  </span>
+                ))}
+              </div>
+              <p className="mt-4 text-xs leading-relaxed text-sub-text/60">
+                할인은 월 패키지에 적용되며, 약정 기간 중 해지 시 할인 전 금액으로 정산됩니다.
+              </p>
+            </div>
+          </FadeInSection>
+        )}
 
         {pricing.showVatNote && (
           <FadeInSection delay={0.3}>

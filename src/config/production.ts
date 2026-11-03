@@ -28,6 +28,17 @@ export const pricing = {
   minContractMonths: 0,
 };
 
+/**
+ * 장기 계약 할인 — 월 단위 계약이 기본이고, N개월 이상 약정 시 월 요금을 할인.
+ * rate 를 비우면 해당 구간은 표시되지 않고, 전부 비면 할인 안내 자체가 숨겨집니다.
+ * 예: { months: 3, rate: "10%" }, { months: 6, rate: "15%" }
+ * (할인은 월 패키지에만 적용 — 기획 진단은 제외)
+ */
+export const longTermDiscounts: { months: number; rate: string }[] = [
+  { months: 3, rate: "" },
+  { months: 6, rate: "" },
+];
+
 /** 패키지별 포함/불포함 항목 */
 export const packages = [
   {

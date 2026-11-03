@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import FadeInSection from "@/components/FadeInSection";
-import { pricing } from "@/config/production";
+import { pricing, longTermDiscounts } from "@/config/production";
 
 /**
  * 자주 묻는 질문 — 아코디언.
@@ -11,10 +11,17 @@ import { pricing } from "@/config/production";
  */
 
 function buildFaqs() {
+  const discounts = longTermDiscounts.filter((d) => d.rate.trim());
+  const discountNote = discounts.length
+    ? ` 기본은 월 단위 계약이고, ${discounts
+        .map((d) => `${d.months}개월 이상 약정 시 월 요금 ${d.rate}`)
+        .join(", ")} 할인이 적용됩니다.`
+    : "";
+
   const contractAnswer =
     pricing.minContractMonths > 0
-      ? `기본 계약 기간은 ${pricing.minContractMonths}개월입니다. 유튜브는 한두 달 만에 결과가 나오는 매체가 아니라서, 최소한의 호흡을 두고 함께 가는 것을 권해 드립니다. 자세한 조건은 상담에서 안내드립니다.`
-      : "계약 기간은 상담에서 채널 상황과 목표에 맞춰 안내드립니다. 유튜브는 한두 달 만에 결과가 나오는 매체가 아니라서, 최소한의 호흡을 두고 함께 가는 것을 권해 드립니다.";
+      ? `기본 계약 기간은 ${pricing.minContractMonths}개월입니다. 유튜브는 한두 달 만에 결과가 나오는 매체가 아니라서, 최소한의 호흡을 두고 함께 가는 것을 권해 드립니다.${discountNote} 자세한 조건은 상담에서 안내드립니다.`
+      : `계약 기간은 상담에서 채널 상황과 목표에 맞춰 안내드립니다. 유튜브는 한두 달 만에 결과가 나오는 매체가 아니라서, 최소한의 호흡을 두고 함께 가는 것을 권해 드립니다.${discountNote}`;
 
   return [
     {
