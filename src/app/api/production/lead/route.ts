@@ -127,6 +127,12 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
+      if (!email) {
+        return NextResponse.json(
+          { error: "이메일을 입력해 주세요." },
+          { status: 400 }
+        );
+      }
       if (raw.hasChannel === null || raw.hasChannel === undefined) {
         return NextResponse.json(
           { error: "유튜브 채널 보유 여부를 선택해 주세요." },

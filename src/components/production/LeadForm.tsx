@@ -105,7 +105,8 @@ export default function LeadForm({
     if (!form.orgName.trim()) return setError("병원·사무소 이름을 입력해 주세요.");
     if (!/^01[016789]-?\d{3,4}-?\d{4}$/.test(form.phone.replace(/\s/g, "")))
       return setError("휴대폰 번호 형식을 확인해 주세요. (예: 010-1234-5678)");
-    if (form.email && !/^\S+@\S+\.\S+$/.test(form.email))
+    if (!form.email.trim()) return setError("이메일을 입력해 주세요.");
+    if (!/^\S+@\S+\.\S+$/.test(form.email))
       return setError("이메일 형식을 확인해 주세요.");
     if (form.hasChannel === null)
       return setError("유튜브 채널 보유 여부를 선택해 주세요.");
@@ -269,7 +270,9 @@ export default function LeadForm({
                   />
                 </div>
                 <div>
-                  <label className={labelClass}>이메일</label>
+                  <label className={labelClass}>
+                    이메일 <span className="text-primary">*</span>
+                  </label>
                   <input
                     type="email"
                     value={form.email}
