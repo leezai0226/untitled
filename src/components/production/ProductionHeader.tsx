@@ -48,12 +48,6 @@ export default function ProductionHeader() {
           >
             진단 신청
           </a>
-          <Link
-            href="/"
-            className="text-xs text-sub-text/60 transition-colors hover:text-white"
-          >
-            ← 메인 사이트
-          </Link>
         </nav>
 
         {/* Mobile hamburger */}
@@ -102,13 +96,6 @@ export default function ProductionHeader() {
               >
                 진단 신청
               </a>
-              <Link
-                href="/"
-                onClick={() => setIsOpen(false)}
-                className="text-sm text-sub-text/60"
-              >
-                ← 메인 사이트로 돌아가기
-              </Link>
             </div>
           </motion.nav>
         )}
