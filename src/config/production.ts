@@ -11,14 +11,14 @@
 
 export const pricing = {
   /** 기획 진단 가격 (예: "10만원"). 비우면 "상담 후 안내" */
-  diagnosisPrice: "",
+  diagnosisPrice: "10만원",
   /** 계약 시 진단 비용 차감 여부 안내 문구. 비우면 표시 안 함 (예: "계약 시 전액 차감") */
-  diagnosisCredit: "",
+  diagnosisCredit: "계약 시 전액 차감",
 
   /** 패키지별 가격 (예: "월 180만원"). 비우면 "상담 후 안내" */
-  basicPrice: "",
-  standardPrice: "",
-  premiumPrice: "",
+  basicPrice: "월 120만원",
+  standardPrice: "월 200만원",
+  premiumPrice: "월 450만원",
 
   /** "부가세 별도" 표기 여부 */
   showVatNote: true,
@@ -35,8 +35,8 @@ export const pricing = {
  * (할인은 월 패키지에만 적용 — 기획 진단은 제외)
  */
 export const longTermDiscounts: { months: number; rate: string }[] = [
-  { months: 3, rate: "" },
-  { months: 6, rate: "" },
+  { months: 3, rate: "10%" },
+  { months: 6, rate: "15%" },
 ];
 
 /** 패키지별 포함/불포함 항목 */
