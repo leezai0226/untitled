@@ -113,7 +113,7 @@ export const budgetRanges = [
 
 export const contact = {
   /** 카카오톡 채널 URL (예: "https://pf.kakao.com/_xxxx/chat"). 비우면 버튼 숨김 */
-  kakaoChannelUrl: "",
+  kakaoChannelUrl: "https://open.kakao.com/o/sPXD8wVi",
   email: "untitled.mooje@gmail.com",
   instagramUrl: "https://www.instagram.com/untitled______projects/",
 };
