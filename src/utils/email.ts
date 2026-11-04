@@ -103,6 +103,85 @@ export async function sendPaymentNotification(
 }
 
 
+/* ───────────────────────────── 랜딩 리드 알림 ───────────────────────────── */
+
+interface LeadNotification {
+  type: "diagnosis" | "checklist";
+  name: string;
+  profession?: string;
+  orgName?: string;
+  phone?: string;
+  email?: string;
+  interestedPackage?: string;
+  budgetRange?: string;
+  source?: string;
+  utmSource?: string;
+  message?: string;
+}
+
+/**
+ * /production 랜딩페이지에서 새 리드(기획 진단 신청 / 체크리스트 다운로드)가
+ * 들어왔을 때 관리자에게 알림 메일을 발송합니다.
+ */
+export async function sendLeadNotification(
+  data: LeadNotification
+): Promise<EmailResult> {
+  try {
+    const resend = getResendClient();
+    if (!resend) {
+      console.warn("[이메일] RESEND_API_KEY가 설정되지 않아 이메일 발송을 건너뜁니다.");
+      return { ok: false, error: "RESEND_API_KEY missing" };
+    }
+
+    const isDiagnosis = data.type === "diagnosis";
+    const row = (label: string, value?: string) =>
+      value
+        ? `<tr><td style="padding:8px 12px;border:1px solid #333;color:#ccc;">${label}</td><td style="padding:8px 12px;border:1px solid #333;color:#fff;">${value}</td></tr>`
+        : "";
+
+    const html = `
+      <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:500px;margin:0 auto;background:#1a1a1a;border-radius:12px;padding:32px;color:#fff;">
+        <h2 style="margin:0 0 24px;color:#c8a2ff;">
+          ${isDiagnosis ? "📋 새 기획 진단 신청" : "📄 체크리스트 다운로드"}이 들어왔습니다!
+        </h2>
+        <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
+          ${row("이름", data.name)}
+          ${row("직군", data.profession)}
+          ${row("기관명", data.orgName)}
+          ${row("연락처", data.phone)}
+          ${row("이메일", data.email)}
+          ${row("관심 상품", data.interestedPackage)}
+          ${row("예산", data.budgetRange)}
+          ${row("유입 경로", data.source)}
+          ${row("UTM", data.utmSource)}
+          ${row("남긴 말", data.message)}
+        </table>
+        <p style="color:#888;font-size:12px;margin:0;">이 메일은 자동 발송된 알림입니다.</p>
+      </div>
+    `;
+
+    const { data: sent, error: sendError } = await resend.emails.send({
+      from: FROM_EMAIL,
+      to: ADMIN_EMAIL,
+      subject: `[untitled-production] ${isDiagnosis ? "기획 진단 신청" : "체크리스트 다운로드"} — ${data.name}${data.orgName ? ` (${data.orgName})` : ""}`,
+      html,
+    });
+
+    if (sendError) {
+      console.error("[이메일] 리드 알림 발송 실패:", sendError);
+      return { ok: false, error: sendError.message || "Resend error" };
+    }
+    return { ok: true, messageId: sent?.id };
+  } catch (err) {
+    console.error("[이메일 발송 실패]", err);
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "unknown",
+    };
+  }
+}
+
+
 /* ───────────────────────────── 입금 안내 리마인드 ───────────────────────────── */
 
 interface DepositReminder {

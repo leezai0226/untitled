@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# 고객 정보가 들어가는 상담 결과물
+sales/output/
