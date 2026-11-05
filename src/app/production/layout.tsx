@@ -9,9 +9,9 @@ import { buildFaqs } from "@/components/production/faqData";
  * 가격·FAQ 는 config 에서 읽으므로 값이 바뀌면 자동 반영.
  */
 
-const TITLE = "병원·변호사 유튜브 제작·운영 | UNTITLED PRODUCTION";
+const TITLE = "전문직 유튜브 제작·운영 — 병원·변호사 전문 | UNTITLED PRODUCTION";
 const DESCRIPTION =
-  "개원의·변호사를 위한 유튜브 제작·운영 서비스. 기획부터 촬영, 편집, 업로드까지 한 팀이 맡습니다. 원장님·변호사님이 쓰시는 시간은 한 달에 반나절이면 됩니다.";
+  "전문직 유튜브, 어떻게 시작할지 모르셨다면. 개원의·변호사 등 전문직을 위한 유튜브 채널 기획·촬영·편집·운영 대행. 원장님·변호사님이 쓰시는 시간은 한 달에 반나절이면 됩니다.";
 const PAGE_URL = `${SITE_URL}/production`;
 
 export const metadata: Metadata = {
@@ -34,7 +34,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: TITLE,
     description:
-      "영상을 못 하시는 게 아니라, 어떻게 시작할지 모르셨던 겁니다. 기획·촬영·편집·업로드까지 한 팀이 맡습니다.",
+      "전문직 유튜브, 영상을 못 하시는 게 아니라 어떻게 시작할지 모르셨던 겁니다. 기획·촬영·편집·업로드까지 한 팀이 맡습니다.",
     url: PAGE_URL,
     siteName: SITE_NAME,
     type: "website",
@@ -87,8 +87,8 @@ function buildJsonLd() {
     {
       "@context": "https://schema.org",
       "@type": "Service",
-      name: "병원·변호사 유튜브 제작·운영",
-      serviceType: "유튜브 채널 기획·제작·운영 대행",
+      name: "전문직 유튜브 제작·운영 (병원·변호사)",
+      serviceType: "전문직 유튜브 채널 기획·제작·운영 대행",
       provider: { "@type": "Organization", name: "UNTITLED PRODUCTION", url: SITE_URL },
       audience: {
         "@type": "Audience",

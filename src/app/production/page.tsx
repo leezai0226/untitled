@@ -94,7 +94,7 @@ export default function ProductionPage() {
       <section className="relative flex min-h-screen flex-col items-center justify-center px-6 pb-56 pt-24 text-center md:pb-36">
         <FadeInSection>
           <p className="font-display text-xs font-semibold uppercase tracking-[0.3em] text-primary">
-            YouTube for Doctors &amp; Lawyers
+            전문직 유튜브 — Doctors &amp; Lawyers
           </p>
           <h1 className="mt-6 text-4xl font-bold leading-tight text-white md:text-6xl">
             영상을 못 하시는 게 아니라,
@@ -102,7 +102,7 @@ export default function ProductionPage() {
             <span className="text-primary">어떻게 시작할지</span> 모르셨던 겁니다.
           </h1>
           <p className="mx-auto mt-8 max-w-xl text-base leading-relaxed text-sub-text md:text-lg">
-            병원·법률 전문 유튜브 — 기획부터 촬영, 편집, 업로드까지 한 팀이 맡습니다.
+            병원·변호사 등 전문직 유튜브 — 기획부터 촬영, 편집, 업로드까지 한 팀이 맡습니다.
             <br />
             원장님·변호사님이 내주실 시간은 한 달에 반나절이면 됩니다.
           </p>
@@ -148,14 +148,14 @@ export default function ProductionPage() {
               {nextNo()} — WHAT WE DO
             </p>
             <h2 className="mt-4 max-w-2xl text-3xl font-bold leading-snug text-white md:text-4xl">
-              조회수보다 중요한 건,
+              전문직 유튜브는,
               <br />
-              전환율입니다.
+              조회수보다 전환율입니다.
             </h2>
             <p className="mt-6 max-w-2xl text-base leading-relaxed text-sub-text">
               영상을 8년 동안 만들면서 느낀 점은, 기획이 문제인 영상이 너무
-              많다는 것입니다. 전문성은 충분한데 무엇을 찍을지, 누구에게 말할지가
-              정리되지 않으면 조회수가 나와도 문의로 이어지지 않습니다. 그래서
+              많다는 것입니다. 전문직 유튜브는 특히 그렇습니다. 전문성은 충분한데
+              무엇을 찍을지, 누구에게 말할지가 정리되지 않으면 조회수가 나와도 문의로 이어지지 않습니다. 그래서
               기획·촬영·편집을 한 번에 맡는 팀을 만들었습니다. 원장님·변호사님은
               본업에 집중하시고, 매달 반복되는 운영 실무는 저희가 맡습니다.
             </p>
