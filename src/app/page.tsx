@@ -1,9 +1,19 @@
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 import Link from "next/link";
 import Image from "next/image";
+import type { Metadata } from "next";
 
 // 항상 최신 데이터를 가져오도록 캐시 비활성화
 export const dynamic = "force-dynamic";
+
+/**
+ * 메인(링크 허브)은 검색 색인에서 제외 — 검색 결과에는 /production 이 대표로 노출되도록.
+ * noindex 만 걸고 follow 는 유지해 링크된 페이지 크롤링은 그대로 허용.
+ */
+export const metadata: Metadata = {
+  title: "UNTITLED-STUDIO",
+  robots: { index: false, follow: true },
+};
 
 /* ── DB에서 가져오는 링크 타입 (type, metadata 포함) ── */
 interface MainLink {
